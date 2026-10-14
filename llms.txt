@@ -12,8 +12,8 @@
 - Player: `--es cmd next|prev|pause|play|toggle|favorite|unfavorite`
 
 ## Docs
-- English README: https://github.com/megarohas/apple-music-android-tv/blob/main/README.md
-- Russian README: https://github.com/megarohas/apple-music-android-tv/blob/main/README.ru.md
+- English README: https://github.com/megarohas/apple-music-android-tv/blob/release/README.md
+- Russian README: https://github.com/megarohas/apple-music-android-tv/blob/release/README.ru.md
 - Source map: MainActivity.java (WebView, keys, intents), res/raw/tv_core.js (focus engine, API, playback), tv_screens.js (screens), tv_player.js (Now Playing)
 
 ## Related
