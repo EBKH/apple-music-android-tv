@@ -914,10 +914,13 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
   };
 
   // Now-playing marker on the tab; the tab itself stays out of the bar until music first plays.
-  let played = false;
+  let played = false, awake = null;
   function onState() {
     const mk = T.mk();
     tabEls.now.classList.toggle('playing', !!mk && (mk.playbackState === 2 || mk.playbackState === 1));
+    // While music plays (or is loading/buffering) the TV's screensaver stays away; paused, it may come.
+    const on = !!mk && [1, 2, 6, 8].includes(mk.playbackState);
+    if (on !== awake) { awake = on; try { native.playing && native.playing(on); } catch (e) {} }
     if (!played && mk && mk.playbackState === 2) played = true;
     tabEls.now.hidden = !played && tab !== 'now';
   }

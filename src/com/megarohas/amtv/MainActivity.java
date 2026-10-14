@@ -594,6 +594,16 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> pendingPlay = null);
         }
 
+        /** Music is playing: keep the screen on so the TV's screensaver doesn't cover the player. */
+        @JavascriptInterface
+        public void playing(boolean on) {
+            runOnUiThread(() -> {
+                if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                Log.i(TAG, on ? "keep screen on" : "screen may sleep");
+            });
+        }
+
         /** The interface language picked in Settings ("" = follow the system), for the splash lines. */
         @JavascriptInterface
         public void lang(String l) {
