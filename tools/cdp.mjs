@@ -6,6 +6,8 @@
 //   node tools/cdp.mjs run file.js [file2.js ...]  (evaluate files in order: hot-reload the injected UI)
 //   node tools/cdp.mjs resources [type]            (what the page has loaded: Font, Stylesheet, Image…)
 //   node tools/cdp.mjs save <url> <file>           (a loaded resource's content, e.g. a font)
+//   node tools/cdp.mjs frames                      (every frame's url, iframes included)
+//   node tools/cdp.mjs evalin <url-part> '<expr>'  (evaluate inside the frame whose url contains url-part)
 // Picks the last page target: popups (sign-in) come after the main page.
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -15,14 +17,17 @@ if (cmd === 'list') {
   for (const t of targets) console.log(t.id, t.url, t.title);
   process.exit(0);
 }
-const target = targets.at(-1);
+// TARGET=<url-part> picks a specific page (e.g. the sign-in popup); default: the last one.
+const target = process.env.TARGET ? targets.find((t) => t.url.includes(process.env.TARGET)) : targets.at(-1);
 if (!target) { console.error('no page targets'); process.exit(1); }
 
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 let seq = 0;
 const pending = new Map();
+const contexts = [];
 ws.onmessage = m => {
   const msg = JSON.parse(m.data);
+  if (msg.method === 'Runtime.executionContextCreated') contexts.push(msg.params.context);
   if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
 };
 const call = (method, params = {}) => new Promise(res => {
@@ -56,6 +61,20 @@ if (cmd === 'eval') {
     if (!c) { console.error('no content:', JSON.stringify(res.error)); process.exit(1); }
     writeFileSync(process.argv[4], Buffer.from(c.content, c.base64Encoded ? 'base64' : 'utf8'));
     console.log('saved', process.argv[4]);
+  }
+} else if (cmd === 'frames' || cmd === 'evalin') {
+  const tree = (await call('Page.getFrameTree')).result.frameTree;
+  const frames = [];
+  (function walk(f, d) { frames.push({ id: f.frame.id, url: f.frame.url, d }); (f.childFrames || []).forEach((c) => walk(c, d + 1)); })(tree, 0);
+  if (cmd === 'frames') { for (const f of frames) console.log('  '.repeat(f.d) + f.url.slice(0, 140)); }
+  else {
+    await call('Runtime.enable');
+    await new Promise((r) => setTimeout(r, 300));
+    const f = frames.find((x) => x.url.includes(arg));
+    const ctx = f && contexts.find((c) => c.auxData && c.auxData.frameId === f.id && c.auxData.isDefault);
+    if (!ctx) { console.error('no frame/context for', arg); process.exit(1); }
+    const r = await call('Runtime.evaluate', { expression: process.argv[4], contextId: ctx.id, awaitPromise: true, returnByValue: true });
+    console.log(JSON.stringify(r.result?.result?.value ?? r.result?.exceptionDetails ?? r, null, 2));
   }
 } else if (cmd === 'shot') {
   const r = await call('Page.captureScreenshot', { format: 'png' });

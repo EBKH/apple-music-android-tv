@@ -1,4 +1,5 @@
 build/
+build-dev/
 shots/
 local.mk
 .DS_Store
