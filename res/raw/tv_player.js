@@ -71,6 +71,8 @@
 .np .upn .item { font-size: 14px; }
 .np .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #777; font-size: 18px; }
 .np .clock { position: absolute; right: 28px; top: 16px; font-size: 15px; color: rgba(255,255,255,.8); }
+.np .drift { display: flex; flex-direction: column; align-items: center; transform: translate(var(--dx, 0), var(--dy2, 0)); }
+.np .clock { transform: translate(calc(var(--dx, 0px) / -2), calc(var(--dy2, 0px) / 2)); }
 `);
 
   // ---------------------------------------------------------------- lyrics: Apple TTML → lines of words
@@ -193,7 +195,8 @@
     const fill = h('div', 'fill'), tNow = h('span', null, '0:00'), tDur = h('span', null, '0:00');
     const pr = h('div', { class: 'pr f row', onok: () => bPlay._onok() }, h('div', 'bar', fill), h('div', 'tm', tNow, tDur));
     const chrome = h('div', 'chrome', h('div', 'tr row', bFav, bShuffle, bPrev, bPlay, bNext, bRepeat, bLyr), pr);
-    const left = h('div', 'left', live, cover, ti, ar, chrome);
+    const drift = h('div', 'drift', live, cover, ti, ar);
+    const left = h('div', 'left', drift, chrome);
     const lyr = h('div', 'lyr'), right = h('div', 'right', lyr);
     const empty = h('div', 'empty', T.t('Сейчас ничего не играет'));
     const clock = h('div', 'clock');
@@ -233,8 +236,10 @@
     let idleTimer = 0;
     const idle = () => s.el.classList.contains('idle');
     // Without its controls the cover block sits in the true middle: shift by what is left visible.
+    // Offsets inside the left column, whichever ancestors sit in between (the drift wrapper).
+    const yIn = (el) => { let t = 0; for (let e = el; e && e !== left; e = e.offsetParent) t += e.offsetTop; return t; };
     function center() {
-      const top = (live.hidden ? cover : live).offsetTop, bottom = ar.offsetTop + ar.offsetHeight;
+      const top = yIn(live.hidden ? cover : live), bottom = yIn(ar) + ar.offsetHeight;
       const mid = (top + bottom) / 2;
       left.style.transformOrigin = '50% ' + mid + 'px';
       left.style.setProperty('--dy', (left.clientHeight / 2 - mid) + 'px');
@@ -266,6 +271,7 @@
     };
     s.onshow = () => {
       clockTick();
+      driftStep();
       if (T.calmNext) {
         // Opened because something started playing: cover and captions only, controls on the first key.
         T.calmNext = false;
@@ -504,7 +510,19 @@
     T.on('queueItemsDidChange', () => { if (!lines) upNext(); }, s);
 
     function relayout() { anchor(); onItem().then(() => { progress(); tick(); }); }
-    s.ondrop = () => { clearTimeout(idleTimer); clearTimeout(clockTimer); clearTimeout(tickTimer); clearInterval(timeTimer); };
+    // Burn-in care: the cover, captions and clock wander a pixel or two every few seconds along a slow
+    // Lissajous path (±16 / ±10 px, a lap in ~15 min). One cheap frame per step, nothing animates.
+    let driftT = Math.floor(Math.random() * 1000), driftTimer = 0;
+    function driftStep() {
+      clearTimeout(driftTimer);
+      if (s.el.hidden || !s.el.isConnected) return;
+      driftT++;
+      s.page.style.setProperty('--dx', Math.round(16 * Math.sin(driftT / 23)) + 'px');
+      s.page.style.setProperty('--dy2', Math.round(10 * Math.sin(driftT / 31)) + 'px');
+      driftTimer = setTimeout(driftStep, 6000);
+    }
+
+    s.ondrop = () => { clearTimeout(idleTimer); clearTimeout(clockTimer); clearTimeout(tickTimer); clearInterval(timeTimer); clearTimeout(driftTimer); };
     relayout();
     s.focusEl = bPlay;
   };
