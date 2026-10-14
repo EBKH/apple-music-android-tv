@@ -58,6 +58,8 @@ public class MainActivity extends Activity {
     private final ArrayList<WebView> popups = new ArrayList<>();
     private Cursor cursor;
     private String pageJs;
+    private String signinJs;                                  // remote-friendly look for Apple's sign-in popup
+    private boolean siOkDown;
     private boolean tv;                                       // our TV interface is up (else: the site + cursor)
     private boolean okDown, okHeld;
     private boolean pageReady;
@@ -103,6 +105,7 @@ public class MainActivity extends Activity {
         pages.post(this::attachCursor);
         // Once per document: the site's own router (pushState) also fires onPageFinished, and
         // re-running the scripts would tear the interface down and build it again.
+        signinJs = raw("signin");
         pageJs = "if(!window.__amtvLoaded){window.__amtvLoaded=true;\n" + raw("page") + "\n" + raw("brand") + "\n" + raw("tv_core")
                 + "\n" + raw("tv_screens") + "\n" + raw("tv_player") + "\nwindow.__tv&&__tv.boot();\n}";
         web.loadUrl(HOME);
@@ -299,8 +302,10 @@ public class MainActivity extends Activity {
         return createConfigurationContext(c).getResources();
     }
 
+    // Resources keep the source package's name even in a renamed build (make dev → ….amtv.dev).
     private int res(String name, String type) {
-        return getResources().getIdentifier(name, type, getPackageName());
+        int id = getResources().getIdentifier(name, type, getPackageName());
+        return id != 0 ? id : getResources().getIdentifier(name, type, MainActivity.class.getPackage().getName());
     }
 
     /** The splash with what is going on underneath; also comes back for "play this" until it plays. */
@@ -379,7 +384,7 @@ public class MainActivity extends Activity {
 
     /** A script from res/raw, or "" when a build leaves it out. */
     private String raw(String name) {
-        int id = getResources().getIdentifier(name, "raw", getPackageName());
+        int id = res(name, "raw");
         if (id == 0) return "";
         try (InputStream in = getResources().openRawResource(id)) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -481,7 +486,15 @@ public class MainActivity extends Activity {
 
         @Override
         public void onPageFinished(WebView v, String url) {
-            if (v != web || !apple(Uri.parse(url))) return;
+            if (v != web) {
+                // Apple's sign-in popup: arrows and OK instead of the pointer.
+                if ("idmsa.apple.com".equals(Uri.parse(url).getHost()) && !signinJs.isEmpty()) {
+                    v.evaluateJavascript(signinJs, null);
+                    cursor.setVisibility(View.INVISIBLE);
+                }
+                return;
+            }
+            if (!apple(Uri.parse(url))) return;
             Log.i(TAG, "page finished " + url);
             if (!pageReady) setStatus(str("status_interface"));
             v.evaluateJavascript(pageJs, null);
@@ -661,10 +674,61 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    private boolean signinOnTop() {
+        if (popups.isEmpty() || signinJs.isEmpty()) return false;
+        String url = top().getUrl();
+        return url != null && "idmsa.apple.com".equals(Uri.parse(url).getHost());
+    }
+
+    /** Arrows move the sign-in page's own focus ring; OK types into a field (keyboard) or presses. */
+    private boolean signinDispatch(KeyEvent e) {
+        int k = e.getKeyCode();
+        boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+        WebView p = top();
+        String dir = k == KeyEvent.KEYCODE_DPAD_UP ? "up" : k == KeyEvent.KEYCODE_DPAD_DOWN ? "down"
+                : k == KeyEvent.KEYCODE_DPAD_LEFT ? "left" : k == KeyEvent.KEYCODE_DPAD_RIGHT ? "right" : null;
+        if (dir != null) {
+            if (down) p.evaluateJavascript("window.__amtvSignin&&__amtvSignin.key('" + dir + "')", null);
+            return true;
+        }
+        if (k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+            if (down && e.getRepeatCount() == 0) siOkDown = true;
+            else if (!down && siOkDown) {
+                siOkDown = false;
+                p.evaluateJavascript("window.__amtvSignin?__amtvSignin.key('ok'):''", r -> {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("tap:(\\d+),(\\d+)").matcher(r == null ? "" : r);
+                    if (m.find()) tapAt(p, Float.parseFloat(m.group(1)), Float.parseFloat(m.group(2)));
+                });
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** A finger tap at CSS-pixel coordinates of a page: to the browser, the person's own tap. */
+    private void tapAt(WebView v, float cssX, float cssY) {
+        float d = getResources().getDisplayMetrics().density;
+        float x = cssX * d, y = cssY * d;
+        long t = android.os.SystemClock.uptimeMillis();
+        v.requestFocus();
+        android.view.MotionEvent down = android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0);
+        down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+        v.dispatchTouchEvent(down);
+        down.recycle();
+        v.postDelayed(() -> {
+            android.view.MotionEvent up = android.view.MotionEvent.obtain(t, android.os.SystemClock.uptimeMillis(),
+                    android.view.MotionEvent.ACTION_UP, x, y, 0);
+            up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            v.dispatchTouchEvent(up);
+            up.recycle();
+        }, 40);
+    }
+
     private void close(WebView p) {
         if (!popups.remove(p)) return;
         pages.removeView(p);
         p.destroy();
+        if (!tv && popups.isEmpty()) cursor.setVisibility(View.VISIBLE);
         Log.i(TAG, "popup closed");
     }
 
@@ -673,6 +737,7 @@ public class MainActivity extends Activity {
         int k = e.getKeyCode();
         if (splash != null && k != KeyEvent.KEYCODE_BACK) return true;   // nothing to press yet
         if (tv && tvDispatch(e)) return true;
+        if (signinOnTop() && signinDispatch(e)) return true;
         if (!tv && Cursor.handles(k)) return cursor.onKey(e);
         if (k == KeyEvent.KEYCODE_BACK) {
             if (e.getAction() == KeyEvent.ACTION_UP && !e.isCanceled()) back();

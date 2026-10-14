@@ -98,7 +98,8 @@ adb install amtv.apk
 ### First start
 
 1. Open **AMTV** from the apps row (red tile with a music note).
-2. Press **Sign In** — Apple's own sign-in page opens with a mouse pointer: move it with the arrows, press **OK** to click, type your Apple ID and password with the on-screen keyboard. Two-factor codes arrive on your iPhone / Mac as usual.
+2. Press **Sign In** — Apple's own sign-in page opens, adapted for the remote: **↑ / ↓** choose a field or button (red frame), **OK** on a field brings up the on-screen keyboard, **OK** on a button presses it. Type your Apple ID → Continue → password → Sign In. Two-factor codes arrive on your iPhone / Mac as usual.
+   > Tip: the **Google TV** app on your phone works as a keyboard for the TV — you can paste your password from a password manager.
 3. Done — AMTV switches to the TV interface. You stay signed in; next time it opens straight to Home.
 
 > Your password is typed **only into Apple's page** (`idmsa.apple.com`). AMTV never sees or stores it.
@@ -218,6 +219,7 @@ Code map:
 | `res/raw/tv_core.js` | the TV interface: focus engine, tabs, API helpers, playback, i18n |
 | `res/raw/tv_screens.js` | Home, Browse, Radio, Library, Search, Settings, album / playlist / artist |
 | `res/raw/tv_player.js` | Now Playing: background, lyrics, scrubbing, favorites |
+| `res/raw/signin.js` | Apple's sign-in page adapted for the remote: focus ring, arrows, OK opens the keyboard (presentation only, it never reads what you type) |
 | `res/raw/brand.js` | branding knobs (icons, font) — the one file a custom build swaps |
 | `tools/cdp.mjs` | Chrome DevTools helper: inspect and hot-reload the interface on a real TV |
 
@@ -233,6 +235,8 @@ cd apple-music-android-tv
 make                                   # → build/amtv.apk (signed with your debug key)
 make install TV=192.168.1.50:5555      # adb-connected TV box; or put `TV = …` into local.mk
 make start
+
+make dev-install && make dev-start    # a separate “AMTV Dev” app next to it (own sign-in and data) for testing
 ```
 
 Paths can be overridden: `make SDK=/path/to/sdk BT=$SDK/build-tools/36.0.0`.

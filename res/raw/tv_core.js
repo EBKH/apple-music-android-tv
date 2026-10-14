@@ -52,7 +52,7 @@
 "Собираю главную…": "Building Home…",
 "Нужен вход в Apple ID": "Sign-in needed",
 "Вы вошли в Apple Music": "Signed in to Apple Music",
-"Войдите в Apple ID: откроется сайт, управление курсором.": "Sign in with your Apple ID: the website opens, use the pointer.",
+"Откроется вход Apple: ↑ ↓ — выбрать поле или кнопку, OK — ввести или нажать.": "Apple’s sign-in opens: ↑ ↓ choose a field or button, OK to type or press.",
 "Войти": "Sign In",
 "Ещё": "More",
 "Здесь пока пусто": "Nothing here yet",
@@ -1137,7 +1137,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     signinEl = s.el;
     nav.hidden = true;
     s.page.append(h('h1', { style: 'margin-top:150px;text-align:center' }, 'Apple Music'),
-      h('div', { class: 'msg', style: 'text-align:center' }, T.t('Войдите в Apple ID: откроется сайт, управление курсором.')),
+      h('div', { class: 'msg', style: 'text-align:center' }, T.t('Откроется вход Apple: ↑ ↓ — выбрать поле или кнопку, OK — ввести или нажать.')),
       h('div', { class: 'row', style: 'display:flex;justify-content:center' },
         h('div', { class: 'btn red f', onok: () => { T.hide(); T.mk().authorize().catch(() => {}); } }, T.t('Войти'))));
     T.focus(s.page.querySelector('.f'));
