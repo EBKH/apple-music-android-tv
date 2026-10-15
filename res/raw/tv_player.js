@@ -30,6 +30,8 @@
 .np .cover { position: relative; width: 270px; height: 270px; border-radius: 16px; overflow: hidden; background: #1a1a2e; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
 .np .cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .7s ease; }
 .np .ti, .np .ar { transition: opacity .25s ease; }
+.np .marq { text-overflow: clip; text-align: left; }
+.np .marq > span { display: inline-block; will-change: transform; transition: opacity .35s; }
 .np .swap { opacity: 0; }
 .np .ti { margin-top: 6px; padding: 10px 14px 12px; font-size: 21px; font-weight: 700; text-align: center; max-width: 348px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
 .np .ar { margin-top: 3px; font-size: 15px; color: #ff5a6e; text-align: center; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 8px; border-radius: 6px; }
@@ -269,8 +271,11 @@
       wake();
       return false;
     };
+    s.marquee = marquee;                                       // (for tools/cdp.mjs experiments)
     s.onshow = () => {
       clockTick();
+      marquee(ti);
+      marquee(ar);
       driftStep();
       if (T.calmNext) {
         // Opened because something started playing: cover and captions only, controls on the first key.
@@ -434,10 +439,50 @@
     }
     function swapText(el, text) {
       if (el.textContent === text) return;
-      if (!el.textContent) { el.textContent = text; return; }
+      if (!el.textContent) { el.textContent = text; marquee(el); return; }
       el.classList.add('swap');
       clearTimeout(el._swap);
-      el._swap = setTimeout(() => { el.textContent = text; el.classList.remove('swap'); }, 250);
+      el._swap = setTimeout(() => { el.textContent = text; el.classList.remove('swap'); marquee(el); }, 250);
+    }
+
+    // A caption too long for its line: rest 3 s, glide to its end (30 px/s), rest 3 s, fade back to
+    // the start. Moved by the same tick as the floating (below), so the two never add up frames;
+    // a 60 fps CSS marquee doubled the box's CPU while it moved. Short captions don't move at all.
+    const MARQ_SPEED = 30, MARQ_REST = 3000, MARQ_FADE = 400;
+    const marqs = new Map();                                   // caption → {span, d, phase, at}
+    function marquee(el) {
+      const text = el.textContent;
+      marqs.delete(el);
+      el.classList.remove('marq');
+      if (el.firstElementChild) el.textContent = text;
+      if (!text || el.clientWidth === 0 || el.scrollWidth <= el.clientWidth + 1) return;
+      const cs = getComputedStyle(el), span = h('span', null, text);
+      el.replaceChildren(span);
+      el.classList.add('marq');
+      const d = Math.ceil(span.offsetWidth - (el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)));
+      marqs.set(el, { span, d, phase: 'rest', at: performance.now() });
+      driftStep();
+    }
+    // Returns true while some caption is gliding (the tick then runs twice as often).
+    function marqStep(now) {
+      let gliding = false;
+      for (const m of marqs.values()) {
+        const t = now - m.at;
+        if (m.phase === 'rest' && t >= MARQ_REST) { m.phase = 'glide'; m.at = now; }
+        else if (m.phase === 'glide') {
+          const x = Math.min(m.d, MARQ_SPEED * t / 1000);
+          m.span.style.transform = 'translate3d(' + (-x).toFixed(2) + 'px,0,0)';
+          if (x >= m.d) { m.phase = 'end'; m.at = now; }
+        } else if (m.phase === 'end' && t >= MARQ_REST) { m.phase = 'fade'; m.at = now; m.span.style.opacity = '0'; }
+        else if (m.phase === 'fade' && t >= MARQ_FADE) {
+          m.span.style.transform = 'translate3d(0,0,0)';
+          m.span.style.opacity = '1';
+          m.phase = 'rest';
+          m.at = now;
+        }
+        if (m.phase === 'glide') gliding = true;
+      }
+      return gliding;
     }
 
     // ---- what is playing
@@ -528,7 +573,7 @@
         const x = ax * Math.sin(2 * Math.PI * t / px), y = ay * Math.sin(2 * Math.PI * t / py + 1.3);
         el.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
       }
-      driftTimer = setTimeout(driftStep, 100);
+      driftTimer = setTimeout(driftStep, marqStep(performance.now()) ? 50 : 100);
     }
 
     s.ondrop = () => { clearTimeout(idleTimer); clearTimeout(clockTimer); clearTimeout(tickTimer); clearInterval(timeTimer); clearTimeout(driftTimer); };
