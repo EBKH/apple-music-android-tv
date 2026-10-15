@@ -31,7 +31,7 @@
 .np .cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .7s ease; }
 .np .ti, .np .ar { transition: opacity .25s ease; }
 .np .swap { opacity: 0; }
-.np .ti { margin-top: 16px; font-size: 21px; font-weight: 700; text-align: center; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+.np .ti { margin-top: 6px; padding: 10px 14px 12px; font-size: 21px; font-weight: 700; text-align: center; max-width: 348px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
 .np .ar { margin-top: 3px; font-size: 15px; color: #ff5a6e; text-align: center; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 8px; border-radius: 6px; }
 .np .ar.focus { background: rgba(255,255,255,.12); }
 .np .chrome { width: 100%; transition: opacity .25s; }
@@ -511,8 +511,9 @@
 
     function relayout() { anchor(); onItem().then(() => { progress(); tick(); }); }
     // Burn-in care: the cover, title, artist and clock each float on their own slow path (two sines
-    // per element, periods of a minute or two). Five sub-pixel steps a second on their own GPU layers
-    // read as a smooth drift, at the cost of a few composites a second — not a 60 fps animation.
+    // per element, periods of a minute or two). Ten sub-pixel steps a second on their own GPU layers
+    // read as a smooth drift, at the cost of ten composites a second — not a 60 fps animation.
+    // (The title's padding leaves room for its shadow: overflow:hidden, needed for the ellipsis, clips.)
     const FLOAT = [  // element, x and y reach (px), x and y periods (s)
       [cover, 12, 8, 97, 131], [ti, 6, 3, 71, 89], [ar, 6, 3, 83, 61], [clock, 8, 5, 113, 79],
     ];
@@ -527,7 +528,7 @@
         const x = ax * Math.sin(2 * Math.PI * t / px), y = ay * Math.sin(2 * Math.PI * t / py + 1.3);
         el.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
       }
-      driftTimer = setTimeout(driftStep, 200);
+      driftTimer = setTimeout(driftStep, 100);
     }
 
     s.ondrop = () => { clearTimeout(idleTimer); clearTimeout(clockTimer); clearTimeout(tickTimer); clearInterval(timeTimer); clearTimeout(driftTimer); };
