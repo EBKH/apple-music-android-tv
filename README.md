@@ -55,7 +55,7 @@ It is free, open source and contains **no hacks**: under the hood it runs **Appl
 - 📚 **Library** — recently added, playlists, albums, artists, songs.
 - 🔍 **Search** — artists, songs, albums, playlists and stations, with search history.
 - 💿 **Album, playlist and artist pages** — Play, Shuffle, Add to Library; popular tracks are marked like in Apple Music.
-- 🎵 **Now Playing** — big cover, smooth track changes, background tinted by the artwork; controls hide by themselves, **←/→ skip tracks** while they are hidden, scrubbing with a smooth knob.
+- 🎵 **Now Playing** — big cover, smooth track changes, background tinted by the artwork; controls hide by themselves, **←/→ skip tracks** while they are hidden, scrubbing with a smooth knob. Long titles scroll; the cover, title, artist and clock slowly float, each on its own path, so nothing stays burned into the screen. The TV's screensaver stays away while music plays.
 - ⭐ **Favorites** — the star in the player (same as ⭐ in Apple Music).
 - 📝 **Lyrics** — word-by-word synced lyrics from Apple Music (switch them on with the lyrics button in the player).
 - 🗣️ **Voice & automation hooks** — start a station or skip tracks from outside the app (see [Automation](#voice-assistants--automation)); works with the open-source voice remote [megarohas_tv_voice](https://github.com/megarohas/megarohas_tv_voice).
@@ -205,8 +205,8 @@ Apple Music shows the catalog of your Apple ID's country. Before you sign in, th
 ```
 
 - **No DRM tricks, no token extraction.** The interface asks Apple's API through the page's own signed-in MusicKit session and starts playback with MusicKit, like the website does.
-- **Apple's own page stays loaded but hidden** (`content-visibility: hidden`) — it owns the player. AMTV keeps it on a page without animated artwork and refuses the requests it would make only for itself (motion-artwork video, its own thumbnails, analytics): on a slow box this was the difference between a 20 s and a 4 s station start.
-- **Built for weak GPUs** — no blur filters or endless animations; the Now Playing background is a 64×36 blurred canvas painted once per song and stretched; lyrics advance on timers aimed at the next word, not a per-frame loop; the progress bar is one CSS transition.
+- **Apple's own page stays loaded but hidden** (`display: none`) — it owns the player. AMTV keeps it on a page without animated artwork and refuses the requests it would make only for itself (motion-artwork video, its own thumbnails, analytics): on a slow box this was the difference between a 20 s and a 4 s station start.
+- **Built for weak GPUs** — no blur filters or endless animations; the Now Playing background is a 64×36 blurred canvas painted once per song and stretched; lyrics advance on timers aimed at the next word, not a per-frame loop; the floating, the scrolling caption and the progress bar share one 10-per-second tick and move through paused animations, so a step never makes the page re-layer; Apple's hidden page is kept from animating at all.
 - **Remote navigation** — a small focus engine: rows of focusable items, row memory, shelves that slide with `transform`, edge-to-tab switching, and a mouse pointer for the website mode.
 
 Code map:
