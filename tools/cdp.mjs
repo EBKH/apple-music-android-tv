@@ -119,9 +119,11 @@ if (cmd === 'eval') {
   for (const [k, us] of rows) console.log(String((us / 1000 / secs).toFixed(1)).padStart(7), 'ms/s ', k);
 } else if (cmd === 'trace') {
   const secs = Number(arg || 6);
-  await call('Tracing.start', { transferMode: 'ReportEvents',
+  setTimeout(() => { console.error('trace: no data (another trace running?)'); process.exit(1); }, secs * 1000 + 30000);
+  const started = await call('Tracing.start', { transferMode: 'ReportEvents',
     traceConfig: { includedCategories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'blink', 'cc', 'gpu',
       ...(process.env.TRACE_CATS ? process.env.TRACE_CATS.split(',') : [])] } });
+  if (started.error) { console.error('trace:', started.error.message); process.exit(1); }
   await new Promise((r) => setTimeout(r, secs * 1000));
   const done = new Promise((r) => { traceDone = r; });
   await call('Tracing.end');
