@@ -465,7 +465,7 @@
       el.replaceChildren(span);
       el.classList.add('marq');
       const d = Math.ceil(span.offsetWidth - (el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)));
-      marqs.set(el, { span, d, phase: 'rest', at: performance.now() });
+      marqs.set(el, { span, d, move: mover(span, 'x', d), phase: 'rest', at: performance.now() });
       driftStep();
     }
     // Returns true while some caption is gliding (the tick then runs twice as often).
@@ -476,11 +476,11 @@
         if (m.phase === 'rest' && t >= MARQ_REST) { m.phase = 'glide'; m.at = now; }
         else if (m.phase === 'glide') {
           const x = Math.min(m.d, MARQ_SPEED * t / 1000);
-          m.span.style.transform = 'translate3d(' + (-x).toFixed(2) + 'px,0,0)';
+          m.move(-x);
           if (x >= m.d) { m.phase = 'end'; m.at = now; }
         } else if (m.phase === 'end' && t >= MARQ_REST) { m.phase = 'fade'; m.at = now; m.span.style.opacity = '0'; }
         else if (m.phase === 'fade' && t >= MARQ_FADE) {
-          m.span.style.transform = 'translate3d(0,0,0)';
+          m.move(0);
           m.span.style.opacity = '1';
           m.phase = 'rest';
           m.at = now;
@@ -560,6 +560,20 @@
     T.on('queueItemsDidChange', () => { if (!lines) upNext(); }, s);
 
     function relayout() { anchor(); onItem().then(() => { progress(); tick(); }); }
+    // An offset moved step by step from script. Chromium redoes the whole page's layering after any
+    // inline transform change (~1 ms on this box, ten times a second), but moves a layer driven by an
+    // animation directly: so each offset is a paused linear animation whose clock is set instead.
+    // Across goes on `translate`, up/down on `transform`, so the two never override each other.
+    function mover(el, axis, reach) {
+      reach = Math.max(1, reach);
+      const at = (v) => axis === 'x' ? { translate: v + 'px 0' } : { transform: 'translateY(' + v + 'px)' };
+      const an = el.animate([at(-reach), at(reach)], { duration: 1000, fill: 'both' });
+      an.pause();
+      const move = (v) => { an.currentTime = (v / reach + 1) * 500; };   // v: -reach…reach px
+      move(0);
+      return move;
+    }
+
     // Burn-in care: the cover, title, artist and clock each float on their own slow path (two sines
     // per element, periods of a minute or two). Ten sub-pixel steps a second on their own GPU layers
     // read as a smooth drift, at the cost of ten composites a second — not a 60 fps animation.
@@ -567,16 +581,19 @@
     const FLOAT = [  // element, x and y reach (px), x and y periods (s)
       [cover, 12, 8, 97, 131], [ti, 6, 3, 71, 89], [ar, 6, 3, 83, 61], [clock, 8, 5, 113, 79],
     ];
-    FLOAT.forEach(([el]) => el.classList.add('float'));
+    const floaters = FLOAT.map(([el, ax, ay, px, py]) => {
+      el.classList.add('float');
+      return { mx: mover(el, 'x', ax), my: mover(el, 'y', ay), ax, ay, px, py };
+    });
     const floatFrom = performance.now() - Math.random() * 3600e3;
     let driftTimer = 0;
     function driftStep() {
       clearTimeout(driftTimer);
       if (s.el.hidden || !s.el.isConnected) return;
       const t = (performance.now() - floatFrom) / 1000;
-      for (const [el, ax, ay, px, py] of FLOAT) {
-        const x = ax * Math.sin(2 * Math.PI * t / px), y = ay * Math.sin(2 * Math.PI * t / py + 1.3);
-        el.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
+      for (const f of floaters) {
+        f.mx(f.ax * Math.sin(2 * Math.PI * t / f.px));
+        f.my(f.ay * Math.sin(2 * Math.PI * t / f.py + 1.3));
       }
       paintProgress();
       driftTimer = setTimeout(driftStep, marqStep(performance.now()) ? 50 : 100);
