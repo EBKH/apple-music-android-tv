@@ -71,8 +71,8 @@
 .np .upn .item { font-size: 14px; }
 .np .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #777; font-size: 18px; }
 .np .clock { position: absolute; right: 28px; top: 16px; font-size: 15px; color: rgba(255,255,255,.8); }
-.np .drift { display: flex; flex-direction: column; align-items: center; transform: translate(var(--dx, 0), var(--dy2, 0)); }
-.np .clock { transform: translate(calc(var(--dx, 0px) / -2), calc(var(--dy2, 0px) / 2)); }
+.np .drift { display: flex; flex-direction: column; align-items: center; }
+.np .float { will-change: transform; }
 `);
 
   // ---------------------------------------------------------------- lyrics: Apple TTML → lines of words
@@ -510,16 +510,24 @@
     T.on('queueItemsDidChange', () => { if (!lines) upNext(); }, s);
 
     function relayout() { anchor(); onItem().then(() => { progress(); tick(); }); }
-    // Burn-in care: the cover, captions and clock wander a pixel or two every few seconds along a slow
-    // Lissajous path (±16 / ±10 px, a lap in ~15 min). One cheap frame per step, nothing animates.
-    let driftT = Math.floor(Math.random() * 1000), driftTimer = 0;
+    // Burn-in care: the cover, title, artist and clock each float on their own slow path (two sines
+    // per element, periods of a minute or two). Five sub-pixel steps a second on their own GPU layers
+    // read as a smooth drift, at the cost of a few composites a second — not a 60 fps animation.
+    const FLOAT = [  // element, x and y reach (px), x and y periods (s)
+      [cover, 12, 8, 97, 131], [ti, 6, 3, 71, 89], [ar, 6, 3, 83, 61], [clock, 8, 5, 113, 79],
+    ];
+    FLOAT.forEach(([el]) => el.classList.add('float'));
+    const floatFrom = performance.now() - Math.random() * 3600e3;
+    let driftTimer = 0;
     function driftStep() {
       clearTimeout(driftTimer);
       if (s.el.hidden || !s.el.isConnected) return;
-      driftT++;
-      s.page.style.setProperty('--dx', Math.round(16 * Math.sin(driftT / 23)) + 'px');
-      s.page.style.setProperty('--dy2', Math.round(10 * Math.sin(driftT / 31)) + 'px');
-      driftTimer = setTimeout(driftStep, 6000);
+      const t = (performance.now() - floatFrom) / 1000;
+      for (const [el, ax, ay, px, py] of FLOAT) {
+        const x = ax * Math.sin(2 * Math.PI * t / px), y = ay * Math.sin(2 * Math.PI * t / py + 1.3);
+        el.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
+      }
+      driftTimer = setTimeout(driftStep, 200);
     }
 
     s.ondrop = () => { clearTimeout(idleTimer); clearTimeout(clockTimer); clearTimeout(tickTimer); clearInterval(timeTimer); clearTimeout(driftTimer); };
