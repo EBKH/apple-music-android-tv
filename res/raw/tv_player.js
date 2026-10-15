@@ -214,7 +214,6 @@
       if (!dur) return true;
       const from = scrubTo != null ? scrubTo : seekingTo != null ? seekingTo : pos() / 1000;
       scrubTo = Math.max(0, Math.min(dur - 1, from + (k === 'right' ? 10 : -10)));
-      clearInterval(timeTimer);
       fill.style.transition = 'transform .25s ease-out';      // the knob glides to the new spot
       fill.style.transform = 'scaleX(' + (scrubTo / dur) + ')';
       tNow.textContent = T.dur(scrubTo * 1000);
@@ -253,6 +252,8 @@
     }
     const wake = () => {
       s.el.classList.remove('idle');
+      lastFill = -1;
+      paintProgress();
       clearTimeout(idleTimer);
       idleTimer = setTimeout(goIdle, T.cur() === pr ? 15000 : CHROME_MS);   // more time while scrubbing
     };
@@ -306,24 +307,28 @@
     const pos = () => anchorPos + (playing() ? performance.now() - anchorWall : 0);
     function anchor() { anchorPos = (mk.currentPlaybackTime || 0) * 1000; anchorWall = performance.now(); }
 
-    // Progress: one linear transition to the end, restarted on play/pause/seek. Time text 1×/s.
-    let timeTimer = 0;
+    // Progress: the bar and the time are painted by the shared tick (see driftStep), only while the
+    // controls are on screen and only when the fill moved a quarter pixel or more. A CSS transition
+    // across the whole song kept the page restyling 60 times a second, hidden controls included.
+    let lastFill = -1;
+    function paintProgress() {
+      if (scrubTo != null || idle()) return;
+      const dur = (mk.currentPlaybackDuration || 0) * 1000;
+      const f = dur ? Math.min(1, pos() / dur) : 0;
+      if (Math.abs(f - lastFill) * 320 >= 0.25) {
+        lastFill = f;
+        fill.style.transform = 'scaleX(' + f.toFixed(4) + ')';
+      }
+      const now = T.dur(pos());
+      if (tNow.textContent !== now) tNow.textContent = now;
+    }
     function progress() {
       if (scrubTo != null) return;
-      const dur = (mk.currentPlaybackDuration || 0) * 1000, p = pos();
-      const f = dur ? Math.min(1, p / dur) : 0;
+      const dur = (mk.currentPlaybackDuration || 0) * 1000;
       fill.style.transition = 'none';
-      fill.style.transform = 'scaleX(' + f + ')';
-      if (dur && playing()) {
-        void fill.offsetWidth;
-        fill.style.transition = 'transform ' + Math.max(0, dur - p) + 'ms linear';
-        fill.style.transform = 'scaleX(1)';
-      }
       tDur.textContent = dur ? T.dur(dur) : '';
-      clearInterval(timeTimer);
-      const tick = () => { if (scrubTo == null) tNow.textContent = T.dur(pos()); };
-      tick();
-      if (playing() && !s.el.hidden) timeTimer = setInterval(tick, 1000);
+      lastFill = -1;
+      paintProgress();
     }
 
     // ---- background from the cover: a 64×36 blurred paint, stretched by the GPU for free
@@ -573,10 +578,11 @@
         const x = ax * Math.sin(2 * Math.PI * t / px), y = ay * Math.sin(2 * Math.PI * t / py + 1.3);
         el.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
       }
+      paintProgress();
       driftTimer = setTimeout(driftStep, marqStep(performance.now()) ? 50 : 100);
     }
 
-    s.ondrop = () => { clearTimeout(idleTimer); clearTimeout(clockTimer); clearTimeout(tickTimer); clearInterval(timeTimer); clearTimeout(driftTimer); };
+    s.ondrop = () => { clearTimeout(idleTimer); clearTimeout(clockTimer); clearTimeout(tickTimer); clearTimeout(driftTimer); };
     relayout();
     s.focusEl = bPlay;
   };
