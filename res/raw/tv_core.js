@@ -474,7 +474,9 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
   const rowOf = (el) => el && el.closest('.row');
   const screenOf = (el) => el && el.closest('.screen');
   const inNav = (el) => !!el && nav.contains(el);
-  const visible = (el) => !!el && el.isConnected && !el.closest('[hidden]') && el.offsetParent !== null;
+  // Attached and not inside anything [hidden] — everything focusable is hidden that way here. No
+  // offsetParent: it forced a layout per row and per card on every key press.
+  const visible = (el) => !!el && el.isConnected && !el.closest('[hidden]');
 
   T.focus = function focus(el) {
     if (!el) return;
