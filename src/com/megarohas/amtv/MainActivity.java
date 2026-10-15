@@ -1,5 +1,6 @@
 package com.megarohas.amtv;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -20,6 +21,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.view.WindowManager;
+import android.view.accessibility.AccessibilityManager;
+import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -68,6 +71,9 @@ public class MainActivity extends Activity {
     private FrameLayout root;
     private final Runnable splashTimeout = this::hideSplash;
     private boolean started, dreaming;
+    private volatile boolean screenReader;                    // TalkBack & co are on: they read the page itself
+    private final AccessibilityManager.AccessibilityStateChangeListener a11yChanged = on -> checkScreenReader();
+    private final AccessibilityManager.TouchExplorationStateChangeListener touchChanged = on -> checkScreenReader();
 
     // Leaving the app pauses the music; the TV's screensaver (a "dream") does not count as leaving.
     private final BroadcastReceiver dreams = new BroadcastReceiver() {
@@ -88,6 +94,10 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         WebView.setWebContentsDebuggingEnabled(true);         // reachable only through adb
         CookieManager.getInstance().setAcceptCookie(true);
+        AccessibilityManager am = (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
+        am.addAccessibilityStateChangeListener(a11yChanged);
+        am.addTouchExplorationStateChangeListener(touchChanged);
+        checkScreenReader();
 
         pages = new FrameLayout(this);
         pages.setBackgroundColor(Color.BLACK);
@@ -121,6 +131,7 @@ public class MainActivity extends Activity {
         super.onStart();
         started = true;
         pages.removeCallbacks(pauseIfLeft);
+        checkScreenReader();                                  // turned on in Settings meanwhile
     }
 
     // The dream broadcast can land just after onStop: decide a moment later.
@@ -400,8 +411,23 @@ public class MainActivity extends Activity {
         return popups.isEmpty() ? web : popups.get(popups.size() - 1);
     }
 
+    // Any accessibility service that may read windows (a button remapper, here Button Mapper) makes
+    // Chromium mirror the whole page as an accessibility tree and update it as the page changes:
+    // about a tenth of the page's work while browsing. Only a screen reader uses that tree, so only
+    // with one on does the page get asked for it (Chromium builds the tree on that first request).
+    private void checkScreenReader() {
+        AccessibilityManager am = (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
+        screenReader = am.isTouchExplorationEnabled() || !am.getEnabledAccessibilityServiceList(
+                AccessibilityServiceInfo.FEEDBACK_SPOKEN | AccessibilityServiceInfo.FEEDBACK_BRAILLE).isEmpty();
+    }
+
     private WebView newPage() {
-        WebView v = new WebView(this);
+        WebView v = new WebView(this) {
+            @Override
+            public AccessibilityNodeProvider getAccessibilityNodeProvider() {
+                return screenReader ? super.getAccessibilityNodeProvider() : null;
+            }
+        };
         WebSettings s = v.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -801,6 +827,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         unregisterReceiver(dreams);
+        AccessibilityManager am = (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
+        am.removeAccessibilityStateChangeListener(a11yChanged);
+        am.removeTouchExplorationStateChangeListener(touchChanged);
         if (cursor.isAttachedToWindow()) getWindowManager().removeViewImmediate(cursor);
         for (WebView p : popups) p.destroy();
         web.destroy();
