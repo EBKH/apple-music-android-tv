@@ -308,13 +308,12 @@
     + '#amtv-tv{position:fixed;inset:0;z-index:2147483646;background:#000;contain:strict;display:none}';
   // TV mode on/off is this sheet's media switch, not a class on <html>: the site rewrites <html>'s
   // classes while it starts, which wiped ours and showed its own (signed-out looking) page for a moment.
-  // Hidden, Apple's interface still follows the music: its mini player cross-fades every new cover.
-  // Such a transition, started in the hidden subtree, could keep the page drawing 60 frames a second
-  // for minutes after a track change, so in TV mode nothing in there transitions or animates.
+  // Hidden with display:none, not content-visibility:hidden. Apple's interface still follows the music
+  // (its mini player cross-fades every new cover); in a content-visibility subtree such a transition
+  // got stuck and kept the page drawing 60 frames a second for minutes after a track change.
   const modeCss = document.createElement('style');
   modeCss.id = 'amtv-mode-css';
-  modeCss.textContent = '.body-container{content-visibility:hidden!important}'
-    + '.body-container *,.body-container ::before,.body-container ::after{transition:none!important;animation:none!important}'
+  modeCss.textContent = '.body-container{display:none!important}'
     + 'html,body{overflow:hidden!important}#amtv-tv{display:block!important}';
   modeCss.media = 'not all';
   document.head.append(hostCss, modeCss);
