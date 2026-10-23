@@ -524,7 +524,7 @@ public class MainActivity extends Activity {
         public void onPageFinished(WebView v, String url) {
             if (v != web) {
                 // Apple's sign-in popup: arrows and OK instead of the pointer.
-                if ("idmsa.apple.com".equals(Uri.parse(url).getHost()) && !signinJs.isEmpty()) {
+                if (signinPage(url) && !signinJs.isEmpty()) {
                     v.evaluateJavascript(signinJs, null);
                     cursor.setVisibility(View.INVISIBLE);
                 }
@@ -731,8 +731,13 @@ public class MainActivity extends Activity {
 
     private boolean signinOnTop() {
         if (popups.isEmpty() || signinJs.isEmpty()) return false;
-        String url = top().getUrl();
-        return url != null && "idmsa.apple.com".equals(Uri.parse(url).getHost());
+        return signinPage(top().getUrl());
+    }
+
+    // The Apple ID pages (address, password, codes), then "You are signed in. Continue" for Apple Music.
+    private static boolean signinPage(String url) {
+        String h = url == null ? null : Uri.parse(url).getHost();
+        return "idmsa.apple.com".equals(h) || "authorize.music.apple.com".equals(h);
     }
 
     /** Arrows move the sign-in page's own focus ring; OK types into a field (keyboard) or presses. */

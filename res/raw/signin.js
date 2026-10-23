@@ -1,6 +1,7 @@
-// Apple's sign-in page (the idmsa.apple.com popup), made usable with a TV remote: bigger fields,
-// a clear focus ring, and ↑/↓ moving between the page's own fields, buttons and links. OK on a
-// field taps it (MainActivity, so the TV keyboard comes up); OK on a button presses it.
+// Apple's sign-in pages (the idmsa.apple.com popup, then authorize.music.apple.com), made usable
+// with a TV remote: bigger fields, a clear focus ring, and ↑/↓ moving between the page's own fields,
+// buttons and links. OK on a field taps it (MainActivity, so the TV keyboard comes up); OK on a
+// button presses it.
 // Presentation only: it never reads, stores or sends anything typed — the person types the Apple ID,
 // password and codes themselves and presses Sign In themselves.
 (function () {
@@ -65,7 +66,11 @@
     let fresh = null;
     for (const e of list) if (e.tagName === 'INPUT' && !seen.has(e)) { seen.add(e); if (!fresh) fresh = e; }
     if (fresh) mark(fresh);
-    else if (list.length && (!cur || !cur.isConnected || list.indexOf(cur) < 0)) mark(list[0]);
+    else if (list.length && (!cur || !cur.isConnected || list.indexOf(cur) < 0)) {
+      // Start on a field; with nothing to type ("You are signed in." → Continue), on a button, not a link.
+      mark(list.find((e) => e.tagName === 'INPUT')
+        || list.find((e) => e.tagName === 'BUTTON' || e.getAttribute('role') === 'button') || list[0]);
+    }
   }
 
   S.key = function (k) {
