@@ -1102,6 +1102,19 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     mk.setQueue = (q) => { perf('setQueue ' + JSON.stringify(q).slice(0, 60)); return sq(q).then((r) => { perf('setQueue done'); return r; }); };
   }
 
+  // The account's storefront, told to the app: it reopens the site there when the site opened in
+  // another one (an account from India on the site's US default can't play anything: CONTENT_EQUIVALENT).
+  async function checkStorefront(mk) {
+    if (!native.storefront || !mk.isAuthorized) return;
+    try {
+      const r = await T.send('GET', '/v1/me/storefront');
+      const sf = r && r.data && r.data[0] && r.data[0].id;
+      if (sf) native.storefront(String(sf).toLowerCase(), String(mk.storefrontId || '').toLowerCase());
+    } catch (e) {
+      console.log('amtv storefront', e);
+    }
+  }
+
   let signinEl = null;
   T.boot = async function () {
     const mk = T.mk();
@@ -1119,6 +1132,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
       if (signinEl) { signinEl.remove(); signinEl = null; nav.hidden = false; T.toast(T.t('Вы вошли в Apple Music')); }
       T.show();
       T.flushPlay();
+      checkStorefront(mk);
     });
     T.booted = true;
     try { performance.setResourceTimingBufferSize(4000); } catch (e) {}   // for diagnosing slow starts
@@ -1128,6 +1142,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     if (mk.isAuthorized) T.show();
     else T.signin();
     T.flushPlay();
+    checkStorefront(mk);
   };
 
   // Not signed in: one big button that hands over to Apple's own sign-in on the site (cursor mode).

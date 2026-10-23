@@ -54,6 +54,7 @@ public class MainActivity extends Activity {
     static final String TAG = "amtv";
     // Search, not home: the hidden site's home plays animated artwork non-stop (see page.js).
     private static final String HOME = "https://music.apple.com/search";
+    private static final java.util.regex.Pattern STOREFRONT = java.util.regex.Pattern.compile("[a-z]{2}");
     private static final ViewGroup.LayoutParams FILL = new ViewGroup.LayoutParams(-1, -1);
 
     private FrameLayout pages;                                // the main page, popups on top
@@ -87,6 +88,7 @@ public class MainActivity extends Activity {
         Log.i(TAG, "left the app: pause");
         web.evaluateJavascript("try{MusicKit.getInstance().pause()}catch(e){}", null);
     };
+    private String storefrontReload;                          // the storefront the site was reopened in
     private String pendingPlay;                               // `--es play ra.…`, kept until the page takes it
 
     @Override
@@ -118,7 +120,7 @@ public class MainActivity extends Activity {
         signinJs = raw("signin");
         pageJs = "if(!window.__amtvLoaded){window.__amtvLoaded=true;\n" + raw("page") + "\n" + raw("brand") + "\n" + raw("tv_core")
                 + "\n" + raw("tv_screens") + "\n" + raw("tv_player") + "\nwindow.__tv&&__tv.boot();\n}";
-        web.loadUrl(HOME);
+        web.loadUrl(home());
         playFrom(getIntent());
         IntentFilter f = new IntentFilter(Intent.ACTION_DREAMING_STARTED);
         f.addAction(Intent.ACTION_DREAMING_STOPPED);
@@ -411,6 +413,14 @@ public class MainActivity extends Activity {
         return popups.isEmpty() ? web : popups.get(popups.size() - 1);
     }
 
+    // Without a storefront in the path Apple's site picks one from the browser's language (en-US here,
+    // whatever the account), and MusicKit then refuses to play an account from another country
+    // (CONTENT_EQUIVALENT). The page reports the account's storefront once signed in; it is kept here.
+    private String home() {
+        String sf = getSharedPreferences("amtv", MODE_PRIVATE).getString("storefront", "");
+        return STOREFRONT.matcher(sf).matches() ? "https://music.apple.com/" + sf + "/search" : HOME;
+    }
+
     // Any accessibility service that may read windows (a button remapper, here Button Mapper) makes
     // Chromium mirror the whole page as an accessibility tree and update it as the page changes:
     // about a tenth of the page's work while browsing. Only a screen reader uses that tree, so only
@@ -554,7 +564,7 @@ public class MainActivity extends Activity {
                 web.destroy();
                 web = newPage();
                 pages.addView(web, 0, FILL);
-                web.loadUrl(HOME);
+                web.loadUrl(home());
             } else {
                 close(v);
             }
@@ -647,6 +657,25 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void lang(String l) {
             if (l != null && l.matches("|en|ru")) getSharedPreferences("amtv", MODE_PRIVATE).edit().putString("lang", l).apply();
+        }
+
+        /**
+         * The signed-in account's storefront and the one the site opened with. Remembered for the next
+         * start; when they differ, the site reopens in the account's storefront (once per storefront).
+         */
+        @JavascriptInterface
+        public void storefront(String account, String page) {
+            if (account == null || !STOREFRONT.matcher(account).matches()) return;
+            getSharedPreferences("amtv", MODE_PRIVATE).edit().putString("storefront", account).apply();
+            if (account.equals(page)) return;
+            runOnUiThread(() -> {
+                if (account.equals(storefrontReload)) return;     // reopened there already: don't loop
+                storefrontReload = account;
+                Log.i(TAG, "storefront " + page + " -> " + account + ": reopening the site");
+                showSplash(str("status_region"));
+                pageReady = false;
+                web.loadUrl(home());
+            });
         }
 
         /** Start the page over behind the splash (e.g. after switching the interface language). */
