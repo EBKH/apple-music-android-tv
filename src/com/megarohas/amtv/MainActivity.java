@@ -71,6 +71,7 @@ public class MainActivity extends Activity {
     private TextView splashStatus;
     private FrameLayout root;
     private final Runnable splashTimeout = this::hideSplash;
+    private int splashGen;                                    // which showing of the splash a "ready" lifts
     private boolean started, dreaming;
     private volatile boolean screenReader;                    // TalkBack & co are on: they read the page itself
     private final AccessibilityManager.AccessibilityStateChangeListener a11yChanged = on -> checkScreenReader();
@@ -323,6 +324,7 @@ public class MainActivity extends Activity {
 
     /** The splash with what is going on underneath; also comes back for "play this" until it plays. */
     private void showSplash(String status) {
+        splashGen++;
         pages.removeCallbacks(splashTimeout);
         pages.postDelayed(splashTimeout, 30000);              // never stuck behind it
         if (splash != null) { setStatus(status); return; }
@@ -619,15 +621,23 @@ public class MainActivity extends Activity {
             });
         }
 
-        /** Lift the splash once the WebView will draw the page as it is now (our interface, not the site). */
+        /**
+         * Lift the splash once the WebView will draw the page as it is now (our interface, not the site).
+         * A page being replaced (a reopen in another storefront, a reload) can still say ready on its
+         * way out: that must not lift the splash put up for its successor.
+         */
         @JavascriptInterface
         public void ready() {
-            runOnUiThread(() -> web.postVisualStateCallback(0, new WebView.VisualStateCallback() {
-                @Override
-                public void onComplete(long id) {
-                    hideSplash();
-                }
-            }));
+            runOnUiThread(() -> {
+                if (!pageReady) return;
+                int gen = splashGen;
+                web.postVisualStateCallback(0, new WebView.VisualStateCallback() {
+                    @Override
+                    public void onComplete(long id) {
+                        if (gen == splashGen) hideSplash();
+                    }
+                });
+            });
         }
 
         /** A line under the splash dots: what the interface is doing right now. */
