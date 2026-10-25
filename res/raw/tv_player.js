@@ -197,6 +197,12 @@
     const fill = h('div', 'fill'), tNow = h('span', null, '0:00'), tDur = h('span', null, '0:00');
     const pr = h('div', { class: 'pr f row', onok: () => bPlay._onok() }, h('div', 'bar', fill), h('div', 'tm', tNow, tDur));
     const chrome = h('div', 'chrome', h('div', 'tr row', bFav, bShuffle, bPrev, bPlay, bNext, bRepeat, bLyr), pr);
+    if (T.native.toggleBlackScreen) chrome.append(h('div', { class: 'row', style: 'display:flex;justify-content:center;margin-top:12px' },
+      h('div', { class: 'btn f', onok: () => {
+        // The player's automatic focus reset must not wake a manually blacked-out screen.
+        clearTimeout(idleTimer);
+        T.native.toggleBlackScreen();
+      } }, T.t('Чёрный экран'))));
     const drift = h('div', 'drift', live, cover, ti, ar);
     const left = h('div', 'left', drift, chrome);
     const lyr = h('div', 'lyr'), right = h('div', 'right', lyr);

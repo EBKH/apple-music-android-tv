@@ -72,6 +72,9 @@ public class MainActivity extends Activity {
     private View splash;                                      // until the TV interface says it has a screen
     private TextView splashStatus;
     private FrameLayout root;
+    private final ScreenCurtain screenCurtain = new ScreenCurtain();
+    private View blackScreen;
+    private boolean wakingTouch;
     private final Runnable splashTimeout = this::hideSplash;
     private int splashGen;                                    // which showing of the splash a "ready" lifts
     private boolean started, dreaming;
@@ -114,6 +117,11 @@ public class MainActivity extends Activity {
         // builds its first screen; it lifts when the page says ready (25 s at most, never stuck).
         root = new FrameLayout(this);
         root.addView(pages, FILL);
+        blackScreen = new View(this);
+        blackScreen.setBackgroundColor(Color.BLACK);
+        blackScreen.setVisibility(View.GONE);
+        blackScreen.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        root.addView(blackScreen, FILL);
         setContentView(root);
         showSplash(str("status_starting"));
         cursor = new Cursor(this, this::top, () -> web.evaluateJavascript("window.__amtv&&__amtv.wake(2500)", null));
@@ -144,6 +152,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
+        screenCurtain.reset();
+        wakingTouch = false;
+        renderCurtain();
         started = false;
         pages.postDelayed(pauseIfLeft, 1200);
     }
@@ -327,6 +338,7 @@ public class MainActivity extends Activity {
 
     /** The splash with what is going on underneath; also comes back for "play this" until it plays. */
     private void showSplash(String status) {
+        wakeScreen();
         splashGen++;
         pages.removeCallbacks(splashTimeout);
         pages.postDelayed(splashTimeout, 30000);              // never stuck behind it
@@ -565,6 +577,7 @@ public class MainActivity extends Activity {
 
         @Override
         public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail d) {
+            wakeScreen();
             // The 2 GB box may kill the renderer under memory pressure: start over instead of crashing.
             Log.w(TAG, "renderer gone, crashed=" + d.didCrash());
             if (v == web) {
@@ -601,6 +614,7 @@ public class MainActivity extends Activity {
         @Override
         public boolean onCreateWindow(WebView v, boolean dialog, boolean gesture, Message result) {
             if (!WebPolicy.isNavigationAllowed(v.getUrl()) || popups.size() >= 2) return false;
+            wakeScreen();
             WebView p = newPage();
             popups.add(p);
             pages.addView(p, FILL);
@@ -618,6 +632,20 @@ public class MainActivity extends Activity {
 
     /** UI actions and non-identifying device capabilities. No credentials cross this bridge. */
     private final class Bridge {
+        @JavascriptInterface
+        public void toggleBlackScreen() {
+            runOnUiThread(() -> {
+                if (!started || !tv || splash != null || !popups.isEmpty()) return;
+                screenCurtain.toggle();
+                renderCurtain();
+            });
+        }
+
+        @JavascriptInterface
+        public void focusChanged() {
+            runOnUiThread(() -> wakeScreen());
+        }
+
         @JavascriptInterface
         public String diagnostics() {
             org.json.JSONObject result = new org.json.JSONObject();
@@ -759,6 +787,7 @@ public class MainActivity extends Activity {
     }
 
     private void setTv(boolean on) {
+        if (!on) wakeScreen();
         tv = on;
         cursor.setVisibility(on ? View.INVISIBLE : View.VISIBLE);
         if (!on) cursor.show();
@@ -858,6 +887,15 @@ public class MainActivity extends Activity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
         int k = e.getKeyCode();
+        if (e.getAction() == KeyEvent.ACTION_DOWN || e.getAction() == KeyEvent.ACTION_UP) {
+            boolean consumed = screenCurtain.consumeKey(k, e.getAction() == KeyEvent.ACTION_DOWN);
+            if (consumed) {
+                okDown = false;
+                okHeld = false;
+                renderCurtain();
+                return true;
+            }
+        }
         if (splash != null && k != KeyEvent.KEYCODE_BACK) return true;   // nothing to press yet
         if (signinOnTop() && signinDispatch(e)) return true;
         if (popups.isEmpty() && tv && tvDispatch(e)) return true;
@@ -875,6 +913,34 @@ public class MainActivity extends Activity {
             return true;
         }
         return super.dispatchKeyEvent(e);
+    }
+
+    private void renderCurtain() {
+        if (blackScreen == null) return;
+        blackScreen.setVisibility(screenCurtain.isVisible() ? View.VISIBLE : View.GONE);
+        if (screenCurtain.isVisible()) {
+            blackScreen.bringToFront();
+            if (cursor != null) cursor.setVisibility(View.INVISIBLE);
+        }
+    }
+
+    private void wakeScreen() {
+        screenCurtain.wake();
+        renderCurtain();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent e) {
+        if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN && screenCurtain.isVisible()) {
+            wakingTouch = true;
+            wakeScreen();
+        }
+        if (wakingTouch) {
+            if (e.getActionMasked() == android.view.MotionEvent.ACTION_UP
+                    || e.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL) wakingTouch = false;
+            return true;
+        }
+        return super.dispatchTouchEvent(e);
     }
 
     private static String media(int k) {

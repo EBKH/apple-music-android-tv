@@ -403,6 +403,8 @@
     const mk = T.backend;
     const item = (label, sub, run) => h('div', { class: 'item f row', onok: run }, h('div', 'tx', h('div', 'a', label), sub ? h('div', 'b', sub) : null));
     s.page.append(h('h1', null, T.t('Настройки')), h('div', 'list set',
+      T.native.toggleBlackScreen ? item(T.t('Чёрный экран'),
+        T.t('Звук продолжится. Нажмите любую кнопку, чтобы вернуться.'), () => T.native.toggleBlackScreen()) : null,
       item(T.t('Режим сайта'), T.t('Сайт Apple Music с курсором. «Назад» вернёт сюда.'), () => T.site()),
       item(T.t('Язык') + ': ' + (T.lang === 'ru' ? 'Русский' : 'English'), T.lang === 'ru' ? 'Switch to English' : 'Переключить на русский',
         () => T.setLang(T.lang === 'ru' ? 'en' : 'ru')),

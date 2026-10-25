@@ -33,6 +33,9 @@ No registrar correo de Apple, contraseña, códigos 2FA, cookies, tokens, cuerpo
 | S1 | Sign Out y relanzar | No conserva cookies ni biblioteca/historial de búsqueda de la sesión; solicita autorización otra vez |
 | S2 | Navegación fuera de los orígenes aprobados, HTTP, file/content, SSL inválido | Se bloquea; no se ignoran errores TLS ni se conceden cámara/micrófono |
 | S3 | APK normal: comprobar que no hay inspección WebView de este proceso | `debuggable=false` y sin socket de depuración WebView; permisos mínimos |
+| V1 | Seleccionar Black screen desde Now Playing o Settings | Toda la pantalla queda negra y el audio continúa; no reaparece sola al ocultarse los controles |
+| V2 | Pulsar OK/flecha/play-pause una vez mientras está negra, incluida una pulsación larga | Se muestra la UI sin pausar, cambiar canción ni abrir menús; la siguiente pulsación funciona normalmente |
+| V3 | Cambiar foco o salir/reabrir la app | La UI se muestra; no se activa automáticamente ni persiste el modo negro |
 | N1 | Cortar/reponer internet durante reproducción y navegación | Error comprensible y recuperación/reintento; no sustituir reproducción protegida con previews |
 
 Una radio que suena o una canción de 90 segundos no aprueban D1. No exportar tráfico de autenticación ni claves de medios para comprobar DRM.
@@ -54,3 +57,10 @@ AMTV_JSDOM_MODULE="$PWD/../test-tools/node_modules/jsdom/lib/api.js" node tests/
 ```
 
 La prueba de UI verifica foco de Sign In, pantallas Home/Library/Settings, pérdida de autorización con menú abierto, nuevo login y detección de preview-only. No reemplaza R1–R4 en el mando físico.
+
+Prueba del control de pantalla negra, independiente de Android:
+
+```sh
+javac -d build-tests src/com/megarohas/amtv/ScreenCurtain.java tests/ScreenCurtainTest.java
+java -cp build-tests com.megarohas.amtv.ScreenCurtainTest
+```

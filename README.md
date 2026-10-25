@@ -7,6 +7,7 @@ Base MIT: [megarohas/apple-music-android-tv](https://github.com/megarohas/apple-
 
 - Paquete independiente: `com.megarohas.amtv.shield`.
 - Objetivo: reproducción web estándar AAC. Dolby Atmos y lossless quedan fuera de esta fase.
+- Botón **Black screen** en Now Playing y Settings: negro bajo demanda, audio continuo y retorno con el mando.
 - UI y reproductor separados mediante `res/raw/music_backend.js`.
 - Validación manual en Shield: canciones completas, biblioteca, portadas, interfaz de TV y Radio. Otros dispositivos requieren sus propias pruebas.
 - No se publica en Play Store ni se envían cambios al repositorio original.

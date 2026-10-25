@@ -14,6 +14,8 @@
   // Interface language: the system's (Russian, or else English); Settings can override it.
   // Strings are written in Russian in the code and looked up here for English.
   const EN = {
+"Чёрный экран": "Black screen",
+"Звук продолжится. Нажмите любую кнопку, чтобы вернуться.": "Audio continues. Press any button to return.",
 "Сейчас играет": "Now Playing",
 "Главная": "Home",
 "Обзор": "Browse",
@@ -482,6 +484,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
 
   T.focus = function focus(el) {
     if (!el) return;
+    if (cur !== el && native.focusChanged) native.focusChanged();
     if (cur && cur !== el) { cur.classList.remove('focus'); cur._onblur && cur._onblur(cur); }
     cur = el;
     el.classList.add('focus');

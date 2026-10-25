@@ -22,7 +22,17 @@ const sdk = {
 };
 const emit = name => [...(events.get(name) || [])].forEach(fn => fn());
 w.MusicKit = { getInstance: () => sdk };
-w.AmtvNative = { mode() {}, exit() {}, keyboard() {}, playing() {}, status() {}, ready() {} };
+let blackScreen = false, focusNotifications = 0;
+w.AmtvNative = { mode() {}, exit() {}, keyboard() {}, playing() {}, status() {}, ready() {},
+  toggleBlackScreen() { blackScreen = !blackScreen; }, focusChanged() { blackScreen = false; focusNotifications++; } };
+const idleTimers = new Map(), timeout = w.setTimeout.bind(w), cancelTimeout = w.clearTimeout.bind(w);
+w.setTimeout = (fn, ms, ...args) => {
+  const id = timeout(fn, ms, ...args);
+  if (ms === 7000) idleTimers.set(id, fn);
+  return id;
+};
+w.clearTimeout = id => { idleTimers.delete(id); cancelTimeout(id); };
+w.HTMLElement.prototype.animate = () => ({ pause() {}, cancel() {}, currentTime: 0 });
 w.fetch = async () => ({ ok: true, status: 200, json: async () => ({ data: [] }) });
 for (const file of ['music_backend', 'page', 'brand', 'tv_core', 'tv_screens', 'tv_player']) {
   w.eval(readFileSync(new URL('../res/raw/' + file + '.js', import.meta.url), 'utf8'));
@@ -48,6 +58,28 @@ try {
   await tick();
   assert.equal(T.active().name, 'settings');
   assert.match(T.active().el.textContent, /Diagnostics/);
+  const blackButton = [...T.active().el.querySelectorAll('.item')].find(el => el.textContent.includes('Black screen'));
+  const beforeAudio = calls.filter(x => x === 'play' || x === 'pause').length;
+  T.focus(blackButton);
+  blackButton._onok();
+  assert.equal(blackScreen, true);
+  T.focus(blackButton);
+  assert.equal(blackScreen, true, 'Reaffirming the same focus must not wake the screen');
+  T.focus(T.active().el.querySelectorAll('.item')[1]);
+  assert.equal(blackScreen, false, 'A new focus target must reveal the UI');
+  T.tab('now', true);
+  await tick();
+  const nowBlack = [...T.active().el.querySelectorAll('.btn')].find(el => el.textContent === 'Black screen');
+  assert.ok(nowBlack, 'Now Playing exposes the same on-demand action');
+  T.focus(nowBlack);
+  nowBlack._onok();
+  assert.equal(blackScreen, true);
+  assert.equal(idleTimers.size, 0, 'Auto-hide must not reset focus and wake the black screen');
+  assert.equal(calls.filter(x => x === 'play' || x === 'pause').length, beforeAudio, 'Blanking does not control audio');
+  assert.ok(focusNotifications > 0);
+  T.tab('settings', true);
+  await tick();
+  assert.equal(blackScreen, false);
   // Real Radio renderer + backend/cache pipeline, with controlled Apple response shapes.
   const originalMusic = sdk.api.music;
   let editorialResponse = {}, stationResponse, editorialError = false, searchCalls = 0;

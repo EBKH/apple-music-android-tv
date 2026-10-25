@@ -4,7 +4,7 @@ Variante para uso personal de [megarohas/apple-music-android-tv](https://github.
 
 ## Estado
 
-Versión actual: **1.0.5-shield.3 / 10503**, paquete `com.megarohas.amtv.shield`.
+Versión actual: **1.0.5-shield.4 / 10504**, paquete `com.megarohas.amtv.shield`.
 Prueba manual reportada en NVIDIA Shield TV Pro con Android 11 / API 30 y WebView 155:
 
 - Canciones completas, incluida una de 4:09 minutos.
@@ -12,6 +12,12 @@ Prueba manual reportada en NVIDIA Shield TV Pro con Android 11 / API 30 y WebVie
 - Radio y reproducción de estaciones después de la corrección .3.
 
 Estas pruebas no garantizan compatibilidad con todos los dispositivos, persistencia de sesión a largo plazo ni bitrate/codec efectivo. El objetivo es audio web estándar AAC; no se implementan Dolby Atmos ni lossless. La UI sigue alojada en WebView, separada del backend de reproducción. No se publica en Play Store.
+
+## Pantalla negra bajo demanda
+
+Seleccionar **Black screen** en Now Playing o Settings. La app cubre toda su interfaz con negro sólido, manteniendo el audio. No hay temporizador ni se apaga físicamente la TV. La primera pulsación del mando solo muestra la interfaz; también se consume su repetición y liberación para evitar cambios de pista o pausas accidentales. Un cambio real de foco o toque también muestra la interfaz. El modo no persiste al salir/reabrir y nunca tapa login/carga.
+
+Pruebas locales de estado y UI aprobadas. La apariencia, continuidad de audio y mando físico de esta función quedan pendientes de confirmación en Shield.
 
 ## Instalar
 

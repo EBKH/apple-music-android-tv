@@ -1,5 +1,12 @@
 # Private Shield variant
 
+## 1.0.5-shield.4 — 2026-10-25
+
+- Add on-demand Black screen actions in Now Playing and Settings; no inactivity timer.
+- Cover the UI with solid black while leaving playback untouched. The waking remote gesture is consumed, including key repeats and release.
+- Reveal the UI on a new focus target, touch, login/loading, or return to the app. Black mode is not persisted.
+- Stop the player's auto-hide focus reset while black mode is requested, preventing an unintended wake-up.
+
 ## 1.0.5-shield.3 — 2026-10-25
 
 - Handle missing Radio editorial data instead of indexing an absent array.
