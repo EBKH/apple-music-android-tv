@@ -140,8 +140,8 @@
     const p = (async () => {
       for (const kind of ['syllable-lyrics', 'lyrics']) {
         try {
-          const r = await T.mk().api.music('/v1/catalog/' + T.sf() + '/songs/' + id + '/' + kind, {});
-          const ttml = r.data && r.data.data && r.data.data[0] && r.data.data[0].attributes.ttml;
+          const r = await T.backend.request('/v1/catalog/' + T.sf() + '/songs/' + id + '/' + kind, {});
+          const ttml = r.data && r.data[0] && r.data[0].attributes.ttml;
           if (ttml) { const lines = parseTTML(ttml); if (lines.length) return lines; }
         } catch (e) { /* 404 when a song has none */ }
       }
@@ -157,7 +157,7 @@
   T.screens.now = function (s) {
     s.el.classList.add('full', 'np');
     s.ghostNav = true;
-    const mk = T.mk();
+    const mk = T.backend;
     const bgA = h('canvas', { class: 'bg', width: 64, height: 36 }), bgB = h('canvas', { class: 'bg', width: 64, height: 36 });
     s.el.insertBefore(bgB, s.page);
     s.el.insertBefore(bgA, bgB);

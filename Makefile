@@ -1,4 +1,4 @@
-PKG       := com.megarohas.amtv
+PKG       := com.megarohas.amtv.shield
 SDK       ?= $(HOME)/Library/Android/sdk
 BT        ?= $(SDK)/build-tools/36.0.0
 PLATFORM  ?= $(SDK)/platforms/android-36/android.jar
@@ -7,7 +7,7 @@ JAVA_HOME ?= $(shell /usr/libexec/java_home -v 17)
 export JAVA_HOME
 export PATH := $(JAVA_HOME)/bin:$(PATH)
 
-# The TV box over adb: `make install TV=192.168.1.50:5555`, or put `TV = …` in local.mk (git-ignored)
+# The TV box over adb: `make install TV=192.0.2.10:5555`, or put `TV = …` in local.mk (git-ignored)
 -include local.mk
 TV  ?=
 ADB := adb $(if $(TV),-s $(TV))
@@ -15,7 +15,7 @@ ADB := adb $(if $(TV),-s $(TV))
 # `make DEV=1 …` (or `make dev`, `make dev-install`): a second, side-by-side install for testing,
 # with its own package, sign-in and data, so the everyday install is never touched.
 ifdef DEV
-PKG  := com.megarohas.amtv.dev
+PKG  := com.megarohas.amtv.shield.dev
 B    := build-dev
 APK  := $(B)/amtv-dev.apk
 else
@@ -24,7 +24,7 @@ APK  := $(B)/amtv.apk
 endif
 SRC := $(shell find src -name '*.java')
 RES := $(shell find res -type f)
-ASSETS := $(shell find assets -type f)
+ASSETS := $(shell test ! -d assets || find assets -type f)
 
 .PHONY: all install start stop devtools log clean dev dev-install dev-start dev-devtools
 
@@ -34,7 +34,7 @@ all: $(APK)
 $(APK): AndroidManifest.xml $(SRC) $(RES) $(ASSETS)
 	rm -rf $(B) && mkdir -p $(B)/classes
 	$(BT)/aapt2 compile --dir res -o $(B)/res.zip
-	sed $(if $(DEV),'s|android:label="@string/app_name"|android:label="AMTV Dev"|','') AndroidManifest.xml > $(B)/AndroidManifest.xml
+	sed $(if $(DEV),'s|android:label="@string/app_name"|android:label="AMTV Shield Dev"|;s|android:debuggable="false"|android:debuggable="true"|','') AndroidManifest.xml > $(B)/AndroidManifest.xml
 	$(BT)/aapt2 link -I $(PLATFORM) --manifest $(B)/AndroidManifest.xml $(if $(DEV),--rename-manifest-package $(PKG)) \
 		-A assets -o $(B)/app.unsigned.apk $(B)/res.zip
 	javac -source 8 -target 8 -Xlint:-options -encoding UTF-8 -bootclasspath $(PLATFORM):$(BT)/core-lambda-stubs.jar -d $(B)/classes $(SRC)

@@ -235,7 +235,7 @@ Apple Music показывает каталог страны твоего Apple 
 git clone https://github.com/megarohas/apple-music-android-tv.git
 cd apple-music-android-tv
 make                                   # → build/amtv.apk (подписан твоим debug-ключом)
-make install TV=192.168.1.50:5555      # приставка, подключённая по adb; или впиши `TV = …` в local.mk
+make install TV=192.0.2.10:5555      # приставка, подключённая по adb; или впиши `TV = …` в local.mk
 make start
 
 make dev-install && make dev-start    # отдельное приложение «AMTV Dev» рядом (свой вход и данные) — для тестов

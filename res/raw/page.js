@@ -43,8 +43,8 @@
   };
 
   (function hook(tries) {
-    var mk = window.MusicKit && MusicKit.getInstance && MusicKit.getInstance();
-    if (mk) mk.addEventListener('nowPlayingItemDidChange', function () { window.__amtv.wake(3000); });
+    var mk = window.__amtvBackend;
+    if (mk && mk.ready) mk.addEventListener('nowPlayingItemDidChange', function () { window.__amtv.wake(3000); });
     else if (tries > 0) setTimeout(function () { hook(tries - 1); }, 1000);
   })(60);
 })();

@@ -1,12 +1,11 @@
 // TV interface over music.apple.com, driven by the remote through MainActivity:
 //   __tv.key('up'|'down'|'left'|'right'|'ok'|'hold'|'back') → true when handled.
-// Data comes from the page's own signed-in MusicKit session (MusicKit.getInstance().api.music),
-// playback goes through the official player. Nothing here touches streams or tokens.
+// Data and playback come through music_backend.js; this UI never accesses SDK tokens or streams.
 // Files: tv_core.js (this: shell, focus, navigation, API), tv_screens.js, tv_player.js.
 // Re-running them replaces the old interface: `node tools/cdp.mjs run res/raw/tv_*.js`.
 (function () {
   'use strict';
-  if (window.__tv) try { window.__tv.destroy(); } catch (e) { console.log('amtv destroy', e); }
+  if (window.__tv) try { window.__tv.destroy(); } catch (e) { console.log('amtv destroy'); }
 
   const native = window.AmtvNative || { mode() {}, exit() {}, keyboard() {} };
   const T = window.__tv = { screens: {}, native };
@@ -247,8 +246,8 @@
 
   // ---------------------------------------------------------------- API
 
-  T.mk = () => window.MusicKit && MusicKit.getInstance && MusicKit.getInstance();
-  T.sf = () => (T.mk() && T.mk().storefrontId) || 'us';
+  T.backend = window.__amtvBackend;
+  T.sf = () => (T.backend && T.backend.storefrontId) || 'us';
 
   // GET through the page's MusicKit (it adds both tokens). Promise cache; failures are not cached.
   // Apple's AMP sometimes answers 500 "Upstream Service Error" (~1 in 10): retried.
@@ -283,7 +282,7 @@
   function fetchFresh(key, path, params) {
     return (async () => {
       for (let i = 0; ; i++) {
-        try { return (await T.mk().api.music(path, params || {})).data; }
+        try { return await T.backend.request(path, params || {}); }
         catch (e) {
           if (i >= 2 || !/50\d|upstream/i.test(String(e && (e.errorCode || e.status || e.message)))) throw e;
           await new Promise(r => setTimeout(r, 400 * (i + 1)));
@@ -616,7 +615,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     stage.append(s.el);
     // Builders fill s.page, possibly later (after loading), and call T.ready(s) when they have.
     try { T.screens[name](s, params || {}); }
-    catch (e) { console.log('amtv screen ' + name, e); T.fail(s, e); }
+    catch (e) { console.log('amtv screen ' + name); T.fail(s, e); }
     return s;
   }
 
@@ -746,7 +745,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
         case 'hold': if (cur && cur._onhold) cur._onhold(cur); else if (cur && cur._onok) cur._onok(cur); return true;
         case 'back': return back();
       }
-    } catch (e) { console.log('amtv key', e); }
+    } catch (e) { console.log('amtv key'); }
     return false;
   };
 
@@ -786,7 +785,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
       h('div', 'skel', [1, 2, 3, 4, 5, 6].map(() => h('div'))));
   };
   T.fail = function (s, e, retry) {
-    console.log('amtv fail ' + s.name, e);
+    console.log('amtv fail ' + s.name);
     s.page.replaceChildren(...[
       h('div', 'msg err', T.t('Не удалось загрузить. ') + T.plain(e && (e.errorCode || e.message) || '')),
       retry ? h('div', { class: 'row', style: 'margin: 0 48px' }, h('div', { class: 'btn f', onok: retry }, T.t('Повторить'))) : null].filter(Boolean));
@@ -848,7 +847,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
   // x: a resource to play; opts: {startWith, shuffle, from} — startWith is a track index in an album/playlist.
   T.play = async function (x, opts) {
     opts = opts || {};
-    const mk = T.mk();
+    const mk = T.backend;
     const key = QUEUE_KEY[x.type];
     if (!key) return T.toast(T.t('Не умею играть ') + x.type);
     const el = opts.el !== undefined ? opts.el : cur;
@@ -861,7 +860,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
       if (mk.playbackState !== 2) await mk.play();
       T.onPlay && T.onPlay(x);
     } catch (e) {
-      console.log('amtv play', e);
+      console.log('amtv play');
       T.toast(T.t('Не получилось включить: ') + T.plain(e && (e.errorCode || e.message) || e));
     } finally {
       T.busy(false, el);
@@ -871,7 +870,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
   T.playNext = async (x, later) => {
     try {
       const key = QUEUE_KEY[x.type];
-      await T.mk()[later ? 'playLater' : 'playNext']({ [key]: x.id });
+      await T.backend[later ? 'playLater' : 'playNext']({ [key]: x.id });
       T.toast(later ? T.t('Добавлено в конец очереди') : T.t('Сыграет следующим'));
     } catch (e) { T.toast(T.t('Не получилось: ') + T.plain(e && e.message)); }
   };
@@ -889,18 +888,8 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     T.menu(T.title(x), items);
   };
 
-  // Writes, and reads that must be fresh, go straight to Apple's API with this page's own tokens,
-  // the way the site does it: MusicKit's api.music() quietly turns every call into a cached GET
-  // (our "add to favourites" was a GET that changed nothing, and re-reads came from its cache).
-  T.send = async function (method, path, params) {
-    const mk = T.mk();
-    const url = new URL('https://amp-api.music.apple.com' + path.replace('{sf}', T.sf()));
-    for (const k in params || {}) url.searchParams.set(k, params[k]);
-    const r = await fetch(url, { method, cache: 'no-store',
-      headers: { Authorization: 'Bearer ' + mk.developerToken, 'Music-User-Token': mk.musicUserToken } });
-    if (!r.ok) throw { errorCode: r.status, message: r.statusText };
-    return r.status === 202 || r.status === 204 ? null : r.json().catch(() => null);
-  };
+  // Authenticated data access is confined to the backend adapter.
+  T.send = (method, path, params) => T.backend.send(method, path.replace('{sf}', T.sf()), params);
 
   // Favourites as Apple's site keeps them: personalRating 1. Adding also puts the song in the library.
   T.isFavorite = (id) => T.send('GET', '/v1/catalog/{sf}/songs', { ids: id, 'fields[songs]': 'personalRating' })
@@ -921,7 +910,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
   // Now-playing marker on the tab; the tab itself stays out of the bar until music first plays.
   let played = false, awake = null;
   function onState() {
-    const mk = T.mk();
+    const mk = T.backend;
     tabEls.now.classList.toggle('playing', !!mk && (mk.playbackState === 2 || mk.playbackState === 1));
     // While music plays (or is loading/buffering) the TV's screensaver stays away; paused, it may come.
     const on = !!mk && [1, 2, 6, 8].includes(mk.playbackState);
@@ -930,7 +919,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     tabEls.now.hidden = !played && tab !== 'now';
   }
   T.on = function (ev, fn, s) {
-    const mk = T.mk();
+    const mk = T.backend;
     mk.addEventListener(ev, fn);
     const off = () => mk.removeEventListener(ev, fn);
     (s ? s.off : listeners).push(off);
@@ -944,7 +933,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     return T.play({ id, type });
   };
   T.flushPlay = async function () {
-    const id = window.__amtvPlay, mk = T.mk();
+    const id = window.__amtvPlay, mk = T.backend;
     if (!id || !T.booted || !mk || !mk.isAuthorized) return;
     delete window.__amtvPlay;
     try { native.played && native.played(); } catch (e) {}
@@ -970,7 +959,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     // queue: wait until it is configured, then make sure ours took (loading/playing/waiting), retry.
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const going = () => [1, 2, 6, 8].includes(mk.playbackState);          // loading, playing, seeking, waiting
-    try { await mk._whenConfigured; } catch (e) {}
+    try { await mk.configured; } catch (e) {}
     for (let i = 0; i < 3; i++) {
       said(i ? T.t('Пробую ещё раз…') : T.t('Включаю станцию…'));
       if (i || performance.now() < 20000) await sleep(i ? 2500 : 800);   // only a fresh page is still restoring
@@ -984,7 +973,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
 
   // Remote commands (MainActivity got `--es cmd …`, e.g. from the voice remote): the player, wherever we are.
   T.command = function (c) {
-    const mk = T.mk();
+    const mk = T.backend;
     if (!mk) return;
     if (c === 'next') mk.skipToNextItem();
     else if (c === 'prev') { if (mk.currentPlaybackTime > 8) mk.seekToTime(0); else mk.skipToPreviousItem(); }
@@ -1051,7 +1040,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
   // MusicKit restores the sign-in from cookies only after it is configured ("auth reflection"):
   // deciding before that showed the sign-in screen for a moment and then rebuilt everything.
   async function settled(mk) {
-    try { await mk._whenConfigured; } catch (e) {}
+    try { await mk.configured; } catch (e) {}
     if (mk.isAuthorized) return;
     await new Promise((resolve) => {
       let t = 0;
@@ -1084,11 +1073,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
   function warmUp() {
     T.warmConnections();
     fetch('/includes/js-cdn/hls.js/current/hls.js/hls.js', { credentials: 'same-origin' }).catch(() => {});
-    if (navigator.requestMediaKeySystemAccess) {
-      navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{ initDataTypes: ['cenc'],
-        audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"', robustness: 'SW_SECURE_CRYPTO' }] }])
-        .then((a) => a.createMediaKeys()).then(() => perf('widevine warm')).catch(() => {});
-    }
+    T.backend.diagnostics().then(() => perf('capability check completed')).catch(() => {});
   }
 
   // A small log of how long playback takes to start (read with tools/cdp.mjs: __tv.perf).
@@ -1098,8 +1083,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     for (const ev of ['playbackStateDidChange', 'nowPlayingItemDidChange', 'mediaCanPlay']) {
       T.on(ev, () => perf(ev + (ev === 'playbackStateDidChange' ? ' ' + mk.playbackState : '')));
     }
-    const sq = mk.setQueue.bind(mk);
-    mk.setQueue = (q) => { perf('setQueue ' + JSON.stringify(q).slice(0, 60)); return sq(q).then((r) => { perf('setQueue done'); return r; }); };
+    // Observe state only; never monkey-patch the backend or Apple's player.
   }
 
   // The account's storefront, told to the app: it reopens the site there when the site opened in
@@ -1111,14 +1095,14 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
       const sf = r && r.data && r.data[0] && r.data[0].id;
       if (sf) native.storefront(String(sf).toLowerCase(), String(mk.storefrontId || '').toLowerCase());
     } catch (e) {
-      console.log('amtv storefront', e);
+      console.log('amtv storefront');
     }
   }
 
   let signinEl = null;
   T.boot = async function () {
-    const mk = T.mk();
-    if (!mk) return setTimeout(T.boot, 300);
+    const mk = T.backend;
+    if (!mk || !mk.ready) return setTimeout(T.boot, 300);
     if (T.booting) return;
     T.booting = true;
     T.status(T.t('Проверяю вход в Apple ID…'));
@@ -1127,7 +1111,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     T.on('playbackStateDidChange', onState);
     onState();
     T.on('authorizationStatusDidChange', () => {
-      if (!mk.isAuthorized) return;
+      if (!mk.isAuthorized || mk.previewOnly === true) return;
       cache.clear();
       if (signinEl) { signinEl.remove(); signinEl = null; nav.hidden = false; T.toast(T.t('Вы вошли в Apple Music')); }
       T.show();
@@ -1139,17 +1123,32 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     watchStarts(mk);
     setTimeout(warmUp, 2500);
     [0, 3000, 8000, 15000].forEach((ms) => setTimeout(T.paintIcons, ms));
-    if (mk.isAuthorized) T.show();
+    if (mk.isAuthorized && mk.previewOnly !== true) T.show();
     else T.signin();
+    listeners.push(mk.watchSession(() => {
+      T.forget('');
+      try { localStorage.removeItem('amtv.search'); } catch (_) {}
+      native.playing && native.playing(false);
+      if (!signinEl) {
+        T.signin();
+        T.toast('Apple Music session expired or previews only. Please sign in again.');
+      }
+    }));
     T.flushPlay();
     checkStorefront(mk);
   };
 
   // Not signed in: one big button that hands over to Apple's own sign-in on the site (cursor mode).
   T.signin = function () {
+    T.closeMenu();
+    cancelOpen();
+    clearTimeout(tabTimer);
     T.visible = true;
     tvMode(true);
     native.mode('tv');
+    if (signinEl) signinEl.remove();
+    for (const k in stacks) { for (const old of stacks[k]) drop(old); delete stacks[k]; }
+    tab = null;
     const s = { name: 'signin', el: h('div', 'screen full'), page: h('div', 'page'), off: [] };
     s.el.append(s.page);
     for (const el of stage.children) el.hidden = true;
@@ -1159,7 +1158,7 @@ h2 { font-size: 18px; font-weight: 600; margin: 0 48px 4px; color: #f2f2f5; whit
     s.page.append(h('h1', { style: 'margin-top:150px;text-align:center' }, 'Apple Music'),
       h('div', { class: 'msg', style: 'text-align:center' }, T.t('Откроется вход Apple: ↑ ↓ — выбрать поле или кнопку, OK — ввести или нажать.')),
       h('div', { class: 'row', style: 'display:flex;justify-content:center' },
-        h('div', { class: 'btn red f', onok: () => { T.hide(); T.mk().authorize().catch(() => {}); } }, T.t('Войти'))));
+        h('div', { class: 'btn red f', onok: () => { T.hide(); T.backend.authorize().catch(() => {}); } }, T.t('Войти'))));
     T.focus(s.page.querySelector('.f'));
     T.splashDone();
   };

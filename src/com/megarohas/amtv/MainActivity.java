@@ -34,6 +34,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebStorage;
+import android.content.pm.ApplicationInfo;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -87,7 +89,7 @@ public class MainActivity extends Activity {
     private final Runnable pauseIfLeft = () -> {
         if (started || dreaming) return;
         Log.i(TAG, "left the app: pause");
-        web.evaluateJavascript("try{MusicKit.getInstance().pause()}catch(e){}", null);
+        web.evaluateJavascript("window.__amtvBackend&&__amtvBackend.pause().catch(function(){})", null);
     };
     private String storefrontReload;                          // the storefront the site was reopened in
     private String pendingPlay;                               // `--es play ra.…`, kept until the page takes it
@@ -95,7 +97,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        WebView.setWebContentsDebuggingEnabled(true);         // reachable only through adb
+        WebView.setWebContentsDebuggingEnabled(
+                (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0);
         CookieManager.getInstance().setAcceptCookie(true);
         AccessibilityManager am = (AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
         am.addAccessibilityStateChangeListener(a11yChanged);
@@ -119,10 +122,10 @@ public class MainActivity extends Activity {
         // Once per document: the site's own router (pushState) also fires onPageFinished, and
         // re-running the scripts would tear the interface down and build it again.
         signinJs = raw("signin");
-        pageJs = "if(!window.__amtvLoaded){window.__amtvLoaded=true;\n" + raw("page") + "\n" + raw("brand") + "\n" + raw("tv_core")
+        pageJs = "if(!window.__amtvLoaded){window.__amtvLoaded=true;\n" + raw("music_backend") + "\n" + raw("page") + "\n" + raw("brand") + "\n" + raw("tv_core")
                 + "\n" + raw("tv_screens") + "\n" + raw("tv_player") + "\nwindow.__tv&&__tv.boot();\n}";
         web.loadUrl(home());
-        playFrom(getIntent());
+        // External playback extras disabled in the private build.
         IntentFilter f = new IntentFilter(Intent.ACTION_DREAMING_STARTED);
         f.addAction(Intent.ACTION_DREAMING_STOPPED);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(dreams, f, Context.RECEIVER_NOT_EXPORTED);
@@ -150,7 +153,7 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent i) {
         super.onNewIntent(i);
         setIntent(i);
-        playFrom(i);
+        // The launcher remains exported, but accepts no playback or library mutation extras.
     }
 
     /**
@@ -443,6 +446,10 @@ public class MainActivity extends Activity {
         WebSettings s = v.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        s.setSafeBrowsingEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         // Apple's sign-in opens a popup and reports back to its opener
         s.setSupportMultipleWindows(true);
@@ -463,18 +470,17 @@ public class MainActivity extends Activity {
                 + major + ".0.0.0 Safari/537.36";
     }
 
-    private static boolean apple(Uri u) {
-        String h = u == null ? null : u.getHost();
-        return h != null && (h.equals("apple.com") || h.endsWith(".apple.com"));
+    private static boolean music(Uri u) {
+        return u != null && WebPolicy.isMusic(u.toString());
     }
 
-    // What the hidden site would fetch for itself and we never show: its animated artwork (video),
-    // its own artwork (webp; ours is always jpg) and Apple's analytics. Answered empty, never sent.
+
+    // Skip animated artwork and analytics. Static artwork must remain available in website mode
+    // too: Apple's library and player use WebP covers, even when our TV UI requests JPEG.
     private static boolean useless(Uri u) {
         String host = u.getHost(), path = u.getPath();
         if (host == null || path == null) return false;
         if (host.equals("mvod.itunes.apple.com") && path.startsWith("/itunes-assets/")) return true;
-        if (host.endsWith("mzstatic.com") && path.endsWith(".webp")) return true;
         return host.equals("xp.apple.com");
     }
 
@@ -505,21 +511,24 @@ public class MainActivity extends Activity {
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
             Uri u = r.getUrl();
-            if ("music.apple.com".equals(u.getHost()) && u.getPath() != null && u.getPath().startsWith("/amtv/")) return asset(u.getPath());
+            if (r.isForMainFrame() && !WebPolicy.isNavigationAllowed(u.toString())) return empty();
+            if (music(u) && u.getPath() != null && u.getPath().startsWith("/amtv/")) return asset(u.getPath());
             if (useless(u)) return empty();
             return null;
         }
 
         @Override
         public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
-            if (r.isForMainFrame()) {
-                Log.i(TAG, "navigate " + r.getUrl() + " redirect=" + r.isRedirect() + " gesture=" + r.hasGesture());
-                if (!pageReady) setStatus(str("status_opening"));
+            boolean allowed = WebPolicy.isNavigationAllowed(r.getUrl().toString());
+            if (!allowed) {
+                Log.w(TAG, "blocked navigation: scheme=" + r.getUrl().getScheme()
+                        + " host=" + r.getUrl().getHost() + " mainFrame=" + r.isForMainFrame());
+                if (r.isForMainFrame()) android.widget.Toast.makeText(MainActivity.this,
+                        "Blocked: only approved Apple HTTPS pages may open.", android.widget.Toast.LENGTH_LONG).show();
+                return true;
             }
-            String scheme = r.getUrl().getScheme();
-            if ("https".equals(scheme) || "http".equals(scheme)) return false;
-            Log.i(TAG, "not opening " + r.getUrl());            // itms:, music:, intent: — nothing here handles them
-            return true;
+            if (r.isForMainFrame() && !pageReady) setStatus(str("status_opening"));
+            return false;
         }
 
         @Override
@@ -532,8 +541,8 @@ public class MainActivity extends Activity {
                 }
                 return;
             }
-            if (!apple(Uri.parse(url))) return;
-            Log.i(TAG, "page finished " + url);
+            if (!music(Uri.parse(url))) return;
+            Log.i(TAG, "music page ready");
             if (!pageReady) setStatus(str("status_interface"));
             v.evaluateJavascript(pageJs, null);
             pageReady = true;
@@ -543,7 +552,7 @@ public class MainActivity extends Activity {
         @Override
         public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
             if (!r.isForMainFrame()) return;
-            Log.w(TAG, "load failed: " + e.getDescription() + " " + r.getUrl());
+            Log.w(TAG, "main frame load failed: code=" + e.getErrorCode());
             String url = r.getUrl().toString();
             String html = "<html><body style='background:#000;color:#ddd;font:22px sans-serif;"
                     + "display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0'"
@@ -565,6 +574,7 @@ public class MainActivity extends Activity {
                 pages.removeView(web);
                 web.destroy();
                 web = newPage();
+                web.addJavascriptInterface(new Bridge(), "AmtvNative");
                 pages.addView(web, 0, FILL);
                 web.loadUrl(home());
             } else {
@@ -579,17 +589,18 @@ public class MainActivity extends Activity {
         public void onPermissionRequest(PermissionRequest r) {
             // Widevine for the music itself; nothing else, and only for Apple.
             for (String res : r.getResources()) {
-                if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID.equals(res) && apple(r.getOrigin())) {
+                if (PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID.equals(res) && music(r.getOrigin())) {
                     r.grant(new String[] { res });
                     return;
                 }
             }
-            Log.i(TAG, "denied " + TextUtils.join(",", r.getResources()) + " for " + r.getOrigin());
+            Log.i(TAG, "web permission denied");
             r.deny();
         }
 
         @Override
         public boolean onCreateWindow(WebView v, boolean dialog, boolean gesture, Message result) {
+            if (!WebPolicy.isNavigationAllowed(v.getUrl()) || popups.size() >= 2) return false;
             WebView p = newPage();
             popups.add(p);
             pages.addView(p, FILL);
@@ -605,8 +616,28 @@ public class MainActivity extends Activity {
         }
     };
 
-    /** What the injected TV interface may ask of the app. Nothing here touches data or the network. */
+    /** UI actions and non-identifying device capabilities. No credentials cross this bridge. */
     private final class Bridge {
+        @JavascriptInterface
+        public String diagnostics() {
+            org.json.JSONObject result = new org.json.JSONObject();
+            try {
+                result.put("android", Build.VERSION.RELEASE);
+                result.put("sdk", Build.VERSION.SDK_INT);
+                result.put("abis", TextUtils.join(", ", Build.SUPPORTED_ABIS));
+                android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
+                result.put("webview", provider == null ? "unavailable" : provider.packageName + " " + provider.versionName);
+                java.util.UUID widevine = java.util.UUID.fromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed");
+                result.put("widevine", android.media.MediaDrm.isCryptoSchemeSupported(widevine));
+                if (android.media.MediaDrm.isCryptoSchemeSupported(widevine)) {
+                    try (android.media.MediaDrm drm = new android.media.MediaDrm(widevine)) {
+                        result.put("securityLevel", drm.getPropertyString("securityLevel"));
+                    } catch (Exception unavailable) { result.put("securityLevel", "unavailable"); }
+                }
+            } catch (Exception unavailable) { /* Return only the fields successfully collected. */ }
+            return result.toString();
+        }
+
         @JavascriptInterface
         public void mode(String m) {
             runOnUiThread(() -> setTv("tv".equals(m)));
@@ -699,6 +730,29 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void resetSession() {
+            runOnUiThread(() -> {
+                if (!music(Uri.parse(web.getUrl() == null ? "" : web.getUrl()))) return;
+                web.stopLoading();
+                for (WebView p : popups) { pages.removeView(p); p.destroy(); }
+                popups.clear();
+                WebStorage.getInstance().deleteAllData();
+                web.clearCache(true);
+                web.clearHistory();
+                getSharedPreferences("amtv", MODE_PRIVATE).edit().remove("storefront").apply();
+                storefrontReload = null;
+                CookieManager.getInstance().removeAllCookies(done -> {
+                    CookieManager.getInstance().flush();
+                    pageReady = false;
+                    tv = false;
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    showSplash(str("status_starting"));
+                    web.loadUrl(HOME);
+                });
+            });
+        }
+
+        @JavascriptInterface
         public void exit() {
             runOnUiThread(() -> moveTaskToBack(true));
         }
@@ -746,8 +800,7 @@ public class MainActivity extends Activity {
 
     // The Apple ID pages (address, password, codes), then "You are signed in. Continue" for Apple Music.
     private static boolean signinPage(String url) {
-        String h = url == null ? null : Uri.parse(url).getHost();
-        return "idmsa.apple.com".equals(h) || "authorize.music.apple.com".equals(h);
+        return WebPolicy.isSignIn(url);
     }
 
     /** Arrows move the sign-in page's own focus ring; OK types into a field (keyboard) or presses. */
@@ -806,8 +859,8 @@ public class MainActivity extends Activity {
     public boolean dispatchKeyEvent(KeyEvent e) {
         int k = e.getKeyCode();
         if (splash != null && k != KeyEvent.KEYCODE_BACK) return true;   // nothing to press yet
-        if (tv && tvDispatch(e)) return true;
         if (signinOnTop() && signinDispatch(e)) return true;
+        if (popups.isEmpty() && tv && tvDispatch(e)) return true;
         if (!tv && Cursor.handles(k)) return cursor.onKey(e);
         if (k == KeyEvent.KEYCODE_BACK) {
             if (e.getAction() == KeyEvent.ACTION_UP && !e.isCanceled()) back();
@@ -816,8 +869,8 @@ public class MainActivity extends Activity {
         String js = media(k);
         if (js != null) {
             if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
-                web.evaluateJavascript("(function(){try{var m=MusicKit.getInstance();" + js
-                        + "}catch(e){console.log('amtv media: '+e)}})()", null);
+                web.evaluateJavascript("(function(){try{var m=window.__amtvBackend;if(!m)return;Promise.resolve(" + js
+                        + ").catch(function(){})}catch(e){}})()", null);
             }
             return true;
         }
@@ -839,7 +892,7 @@ public class MainActivity extends Activity {
     }
 
     private void back() {
-        if (tv) {
+        if (tv && popups.isEmpty()) {
             // The interface walks its own screens back; at its root it says false and we go home.
             web.evaluateJavascript("window.__tv?__tv.key('back'):false", r -> {
                 if (!"true".equals(r)) moveTaskToBack(true);

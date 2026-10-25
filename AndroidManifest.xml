@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.megarohas.amtv"
-    android:versionCode="105"
-    android:versionName="1.0.5">
+    package="com.megarohas.amtv.shield"
+    android:versionCode="10503"
+    android:versionName="1.0.5-shield.3">
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
 
@@ -17,13 +17,15 @@
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
         android:allowBackup="false"
+        android:usesCleartextTraffic="false"
+        android:debuggable="false"
         android:hardwareAccelerated="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
 
         <!-- configChanges: a remote or keyboard (dis)connecting must not recreate
              the activity, that would tear down the WebView and stop the music. -->
         <activity
-            android:name=".MainActivity"
+            android:name="com.megarohas.amtv.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"

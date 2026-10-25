@@ -14,3 +14,7 @@ Apple, Apple Music and Apple ID are trademarks of Apple Inc. This project is not
 affiliated with, authorized or endorsed by Apple Inc. It contains no Apple fonts,
 icons or logos, and it does not circumvent DRM: playback is done by Apple's own web
 player (music.apple.com) with the device's Widevine.
+
+Private Shield variant
+----------------------
+Modified 2026-10-25. See CHANGELOG.md and SHIELD.md for changes and limitations.

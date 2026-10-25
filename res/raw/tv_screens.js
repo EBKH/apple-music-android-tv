@@ -71,7 +71,7 @@
   }
 
   T.playSongs = async function (songs, i) {
-    const mk = T.mk(), el = T.cur();
+    const mk = T.backend, el = T.cur();
     T.busy(true, el);
     try {
       mk.shuffleMode = 0;
@@ -79,7 +79,7 @@
       if (mk.playbackState !== 2) await mk.play();
       T.onPlay && T.onPlay(songs[i || 0]);
     } catch (e) {
-      console.log('amtv playSongs', e);
+      console.log('amtv playSongs');
       T.play(songs[i || 0]);
     } finally {
       T.busy(false, el);
@@ -175,10 +175,31 @@
 
   S.radio = function (s) {
     load(s, async () => {
-      const g = (await T.api('/v1/editorial/{sf}/groupings/168577', { platform: 'web', include: 'tabs',
-        extend: 'editorialArtwork', 'limit[contents]': 12 }, 0, true)).data[0];
-      const kids = rel(rel(g, 'tabs')[0], 'children').filter((k) => !/watch interviews/i.test(attrs(k).name || ''));
-      return editorial(kids);
+      const path = '/v1/editorial/' + T.sf() + '/groupings/168577';
+      // This editorial grouping is not available with the same shape in every storefront.
+      // Discard old persisted malformed responses, including when the user selects Try again.
+      T.forget(path);
+      try {
+        const response = await T.api(path, { platform: 'web', include: 'tabs',
+          extend: 'editorialArtwork', 'limit[contents]': 12 });
+        const g = response && Array.isArray(response.data) ? response.data[0] : null;
+        const parent = rel(g, 'tabs')[0] || g;
+        const kids = rel(parent, 'children').filter((k) => !/watch interviews/i.test(attrs(k).name || ''));
+        const shelves = editorial(kids);
+        if (shelves.length) return shelves;
+      } catch (_) { /* The regional catalog can still provide playable stations. */ }
+
+      // Use stations returned by the account's catalog instead of assuming editorial IDs are global.
+      const search = '/v1/catalog/' + T.sf() + '/search';
+      T.forget(search);
+      try {
+        const response = await T.api(search, { term: 'Apple Music', types: 'stations', limit: 25 });
+        const section = response && response.results && response.results.stations;
+        const stations = section && Array.isArray(section.data)
+          ? section.data.filter((x) => x && x.type === 'stations' && x.id) : [];
+        if (stations.length) return T.shelf(T.t('Радио'), stations, { w: 180 });
+      } catch (_) { /* Keep a useful retry action without exposing raw API errors. */ }
+      throw new Error('Radio stations are unavailable for your region right now. Please try again.');
     });
   };
 
@@ -192,7 +213,7 @@
         const r = (await T.api('/v1/editorial/{sf}/rooms/' + x.id, { include: 'contents', extend: 'editorialArtwork',
           'limit[contents]': 100, platform: 'web' })).data[0];
         if (r) { out[0].textContent = T.title(r) || out[0].textContent; items = rel(r, 'contents').filter(notVideo); }
-      } catch (e) { console.log('amtv room', e); }
+      } catch (e) { console.log('amtv room'); }
       if (items.every((i) => i.type === 'songs')) out.push(songShelf('', items));
       else out.push(grid(items, 5, 146));
       return out;
@@ -286,7 +307,7 @@
   // Mark the playing track in any list on this screen.
   function markNow(s) {
     const upd = () => {
-      const np = T.mk().nowPlayingItem;
+      const np = T.backend.nowPlayingItem;
       const id = np && np.id, cid = np && (np.songId || (np.attributes && np.attributes.playParams && np.attributes.playParams.catalogId));
       s.el.querySelectorAll('.item[data-id]').forEach((r) => r.classList.toggle('now', !!id && (r.dataset.id === id || r.dataset.id === cid || r.dataset.cid === id)));
     };
@@ -379,18 +400,38 @@
   // ---------------------------------------------------------------- settings
 
   S.settings = function (s) {
-    const mk = T.mk();
+    const mk = T.backend;
     const item = (label, sub, run) => h('div', { class: 'item f row', onok: run }, h('div', 'tx', h('div', 'a', label), sub ? h('div', 'b', sub) : null));
     s.page.append(h('h1', null, T.t('Настройки')), h('div', 'list set',
       item(T.t('Режим сайта'), T.t('Сайт Apple Music с курсором. «Назад» вернёт сюда.'), () => T.site()),
       item(T.t('Язык') + ': ' + (T.lang === 'ru' ? 'Русский' : 'English'), T.lang === 'ru' ? 'Switch to English' : 'Переключить на русский',
         () => T.setLang(T.lang === 'ru' ? 'en' : 'ru')),
       item(T.t('Обновить данные'), T.t('Сбросить кэш подборок и медиатеки'), () => { T.forget(''); T.toast(T.t('Кэш сброшен')); }),
+      item('Diagnostics', 'AAC / Widevine / session (no account identifiers)', () => T.open('diagnostics')),
       item(T.t('Выйти из Apple ID'), null, () => T.menu(T.t('Выйти из Apple ID?'), [
         { label: T.t('Отмена'), run: () => {} },
-        { label: T.t('Выйти'), run: () => mk.unauthorize().then(() => location.reload()) }]))),
+        { label: T.t('Выйти'), run: async () => {
+          try { await mk.unauthorize(); } catch (_) { /* Always clear the local session. */ }
+          if (T.native.resetSession) T.native.resetSession(); else location.reload();
+        } }]))),
       h('div', { class: 'msg', style: 'margin-top:30px;font-size:13px' },
         T.t('Регион: ') + T.sf().toUpperCase() + T.t(' · Apple Music в браузере, интерфейс для пульта.')));
+    T.ready(s);
+  };
+
+  S.diagnostics = async function (s) {
+    s.page.append(h('h1', null, 'Diagnostics'));
+    T.ready(s);
+    try {
+      const device = T.native.diagnostics ? JSON.parse(T.native.diagnostics()) : {};
+      const playback = await T.backend.diagnostics();
+      for (const [key, value] of Object.entries(Object.assign({}, device, playback))) {
+        s.page.append(h('div', { class: 'msg', style: 'margin:5px 48px;font-size:16px' }, key + ': ' + value));
+      }
+    } catch (_) {
+      s.page.append(h('div', 'msg', 'Diagnostics unavailable'));
+    }
+    s.page.append(h('div', { class: 'btn f row', onok: () => T.key('back') }, 'Back'));
     T.ready(s);
   };
 
@@ -512,7 +553,7 @@
         a.artistBio || T.notes(a) ? h('div', 'bio', T.plain(a.artistBio || T.notes(a))) : null,
         top.length ? h('div', { class: 'btns row', style: 'margin: 0 48px 8px' },
           h('div', { class: 'btn red f', onok: () => T.playSongs(top, 0) }, T.icon('play'), T.t('Популярное')),
-          h('div', { class: 'btn f', onok: () => { T.mk().shuffleMode = 1; T.playSongs(top.slice().sort(() => Math.random() - 0.5), 0); } }, T.icon('shuffle'), T.t('Перемешать'))) : null,
+          h('div', { class: 'btn f', onok: () => { T.backend.shuffleMode = 1; T.playSongs(top.slice().sort(() => Math.random() - 0.5), 0); } }, T.icon('shuffle'), T.t('Перемешать'))) : null,
         songShelf(T.t('Популярные песни'), top),
         T.shelf(T.t('Последний релиз'), view('latest-release'), { w: 160 }),
         T.shelf(T.t('Альбомы'), view('full-albums')),

@@ -1,5 +1,25 @@
 build/
 build-dev/
+build-tests/
+*.keystore
 shots/
 local.mk
 .DS_Store
+
+# Local credentials, signing material, generated packages and diagnostics
+*.jks
+*.p8
+*.p12
+*.pfx
+*.apk
+*.aab
+*.idsig
+*.log
+.env
+.env.*
+!.env.example
+local.properties
+*-preflight.txt
+*-verification.json
+outputs/
+work/

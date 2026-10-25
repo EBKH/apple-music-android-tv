@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AMTV</string>
+    <string name="app_name">AMTV Shield</string>
     <string name="status_starting">Starting…</string>
     <string name="status_opening">Opening Apple Music…</string>
     <string name="status_interface">Loading the interface…</string>
